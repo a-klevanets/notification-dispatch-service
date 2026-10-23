@@ -1,0 +1,21 @@
+# --- Build output ---
+build/
+out/
+bin/
+.gradle/
+*.class
+
+# --- IDE and editor state ---
+.idea/
+*.iml
+.vscode/
+
+# Assistant working notes and tool state: local, not part of the deliverable.
+.qoder/
+
+# --- Shared filesystem noise ---
+.DS_Store
+Thumbs.db
+
+# --- Local scratch: notes, drafts and disposable files ---
+.scratch/
