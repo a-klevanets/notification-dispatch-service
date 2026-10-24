@@ -9,7 +9,7 @@ description = 'homework'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(7)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -30,7 +30,9 @@ dependencies {
 
     implementation "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
 
-    providedCompile 'javax.servlet:javax.servlet-api:3.1.0'
+    // Gradle 8 removed providedCompile from the war plugin; compileOnly has the same effect
+    // here: the container provides the servlet API, the archive must not carry it.
+    compileOnly 'javax.servlet:javax.servlet-api:3.1.0'
 
     runtimeOnly 'com.h2database:h2:1.4.196'
 
