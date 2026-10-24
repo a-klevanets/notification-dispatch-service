@@ -1,78 +1,48 @@
-# Homework - Notification Dispatch Service
+# Notification Dispatch Service
 
-Click **Use this template → Create a new repository**. Create a **private** repository under your own account and invite orion-homework-dev as a collaborator. Complete the assignment and send us your repository link. Please do not publish your solution or open a pull request against this template.
+Sends `EMAIL`, `SMS` and `PUSH` notifications to a recipient, records the outcome of every attempt,
+and refuses the ones the operational safeguards forbid: a blacklisted recipient, a recipient over
+the rate limit, an unknown notification type, and dispatch while a run of consecutive delivery
+failures has tripped the breaker.
 
-## Objective
+## Current stack
 
-Refactor the legacy code to a production ready solution for the notification dispatch service that is maintainable, readable, and scalable using modern practices.
+- **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`
+- **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
+  container (`bootJar`; the plain `jar` task is disabled)
+- **Persistence:** `spring-boot-starter-jdbc` over in-memory H2, one table `ntf_tx`; `schema.sql`
+  drops and recreates it on every startup
+- **Tests:** twelve Jupiter integration tests in `LegacyNotificationEngineIntegrationTest`, run with
+  `@SpringBootTest`
 
-This exercise is intended to be completed in approximately 4 hours.
+The framework underneath the service has been modernized; the dispatch logic in
+`LegacyNotificationEngine` has not been redesigned yet.
 
-The application sends `EMAIL`, `SMS`, and `PUSH` notifications, stores the outcome of those attempts, and enforces the operational safeguards already present in the system. 
-The goal is to improve the design so the code is easier to understand, easier to extend, and more robust without changing the behavior that matters.
+## Behaviour that must be preserved
 
-This is a design and refactoring exercise. The focus is on making a small system feel thoughtful, clean, and ready for change. 
-It also acknowledges that existing API boundaries and persistence design may not be ideal and should be improved.
+Whatever else changes, this is what the service has to keep doing. The named tests are the
+contract:
 
-## System summary
+| Behaviour | What the service does | Covered by |
+|---|---|---|
+| Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `smsAndPushAreDeliveredAndRecorded` |
+| Blacklist | a target containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
+| Rate limit | a target with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
+| Input | a blank or missing target is refused before anything is written, and a missing payload is stored as empty text | `missingTargetIsRejected`; `missingPayloadIsStoredAsEmptyText` |
+| Unknown type | stored with status `U`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
+| Failures and breaker | a failed attempt is stored as `E` and counted; at three consecutive failures the breaker opens and attempts are stored as `R` | `threeFailuresOpenCircuitBreakerForNextAttempt` |
+| History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestStateIsNullBeforeAnythingIsSent` |
 
-The service is responsible for:
+## How changes are documented
 
-- sending notifications to different channels
-- tracking the result of each attempt
-- rejecting unsupported notification types
-- rejecting blocked or rate-limited recipients
-- recording failures and applying a simple rejection path after repeated problems
+Each step changes one thing and records in its commit message what was decided and what was
+rejected. Notes about work that has not been done yet stay out of the repository on purpose: this
+file describes the service as it is, not as it is planned. Local working notes and tool state are
+not tracked at all.
 
-## Core expectations
+## Provenance
 
-The solution should be clear and defensible.
-
-The project should demonstrate sound engineering judgment through:
-
-- clear, readable code
-- sensible use of current best practices
-- no unnecessary complexity
-
-## Behavior to preserve
-
-The system must continue to support the existing notification types and operational safeguards:
-
-- `EMAIL`
-- `SMS`
-- `PUSH`
-- blocked or rate-limited recipients are rejected
-- unsupported notification types fail clearly
-- failures are tracked
-- repeated failures eventually trigger a simple rejection path
-
-## What matters most
-
-We care about:
-
-- correctness
-- maintainability
-- readability
-- clear design decisions
-- practical modernization
-- scalability
-
-## Development process
-
-Please keep a record of the changes you make and why you make them. Preferably, use small, meaningful Git commits with messages that explain both the change and its rationale. Brief notes in the README can supplement the commit history, especially for trade-offs or alternatives you considered.
-
-## Constraints
-
-The solution must use Java and Spring Boot. You may upgrade the Java version and dependencies.
-
-Everything else may be redesigned or rewritten, including the API, database schema, persistence approach, and project structure, provided the behavior described above is preserved.
-
-Keep the solution proportional to the problem. The goal is to transform a small but messy system into something clean, understandable, and fit for future change.
-
-
-## Bonus points
-
-These are not required for the core task, but they can earn additional credit if included well:
-
-- adding a update endpoint for notifications
-- introducing a proper blacklist functionality to enforcement flow for blocked recipients
+The repository was seeded from the task template, and the task statement is kept here as
+[ASSIGNMENT.md](ASSIGNMENT.md). Its list of behaviour to preserve is what the section above
+restates in the project's own terms. Everything that concerns only the exercise - the time box, the
+submission instructions, the bonus items - stays in that file and is not repeated here.
