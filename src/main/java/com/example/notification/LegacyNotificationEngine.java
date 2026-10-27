@@ -1,4 +1,4 @@
-package com.example.homework.notification;
+package com.example.notification;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
