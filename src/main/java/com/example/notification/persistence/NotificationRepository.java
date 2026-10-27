@@ -3,7 +3,7 @@ package com.example.notification.persistence;
 import java.util.List;
 import java.util.Optional;
 
-/** Storage of the notification transaction log, expressed in the terms the dispatch logic uses. */
+/** Storage of the notification attempt log, expressed in the terms the dispatch logic uses. */
 public interface NotificationRepository {
 
   int countRecentByTarget(String target);
@@ -20,9 +20,9 @@ public interface NotificationRepository {
 
   void markSkipped(long id, String message);
 
-  Optional<NotificationTransaction> findById(long id);
+  Optional<NotificationAttempt> findById(long id);
 
-  Optional<NotificationTransaction> findLatest();
+  Optional<NotificationAttempt> findLatest();
 
-  List<NotificationTransaction> findHistory();
+  List<NotificationAttempt> findHistory();
 }

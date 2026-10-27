@@ -10,8 +10,8 @@ failures has tripped the breaker.
 - **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`
 - **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
   container (`bootJar`; the plain `jar` task is disabled)
-- **Persistence:** `spring-boot-starter-jdbc` over in-memory H2, one table `ntf_tx`; `schema.sql`
-  drops and recreates it on every startup
+- **Persistence:** `spring-boot-starter-jdbc` over in-memory H2, one table `notification_attempt`;
+  `schema.sql` drops and recreates it on every startup
 - **Tests:** twelve Jupiter integration tests in `LegacyNotificationEngineIntegrationTest`, run with
   `@SpringBootTest`
 
@@ -41,11 +41,19 @@ Each of these was a choice, not an omission, and each line names the alternative
   real database in a container and keep the log across restarts; here H2 in memory makes a run
   reproducible and the tests independent of any environment. The price: the log is gone on shutdown,
   and the rules computed from it go with it. A shared database would outlive the process and make
-  replicas possible, at the cost of a sequence and a lock instead of `max(id) + 1`.
-- **State is read from the log, not from the process.** The rate limit counts the attempt rows
-  of the last minute; the breaker reads the failure count stored on the newest row. Both are
-  answers about the log, so a restart has nothing to restore, and the alternative that lost is a
-  counter held in the running process: cheaper today, correct only while one process reads the log.
+  replicas possible: the keys come from a sequence, whose only price is gaps after a rolled-back
+  insert, and a second process would still need a lock around the breaker's check-then-write.
+- **State is derived from the log, not kept beside it.** The rate limit and the breaker are computed
+  from the same rows the audit writes, so one place knows the outcome of every attempt and there is
+  nothing to keep in sync. In-process counters are cheaper now, and would have to be replaced the
+  moment the log outlives the process. Derivation is not free: the `failureCount` every response
+  carries is a window over the whole log, since the run a row belongs to can start arbitrarily far
+  back, and neither `LIMIT 20` nor `LIMIT 1` bounds it. The decisions do not pay that - the breaker
+  asks a scalar count that the `(status, id)` index answers without touching the table.
+- **Keys and clocks come from the database.** The identity sequence numbers the attempts and
+  `current_timestamp` dates them, so two processes writing to the same log would agree on order and
+  time. The JVM clock and `max(id) + 1` were cheaper to write and lost: they disagree the moment a
+  second process appears.
 - **Safeguards written out rather than taken from a library.** Resilience4j and Bucket4j cover this
   ground, but their breaker recovers on a timer and their limiter refreshes a fixed period, while the
   behaviour here is a sliding minute and a breaker that never closes - a limitation kept, not a design.

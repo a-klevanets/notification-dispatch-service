@@ -1,39 +1,49 @@
 package com.example.notification.persistence;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Timestamp;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-/**
- * The SQL the service has always used, kept statement for statement so that moving it changes nothing
- * observable. Two facts about it are deliberate: {@code fc} and {@code dc} are read from the newest row
- * and carried into the next one, and the newest row is treated as the current state of the log.
- */
 @Repository
 public class JdbcNotificationRepository implements NotificationRepository {
 
   private static final int HISTORY_LIMIT = 20;
   private static final int MESSAGE_LENGTH = 255;
 
-  private static final RowMapper<NotificationTransaction> ROW_MAPPER =
-      (ResultSet rs, int rowNum) ->
-          new NotificationTransaction(
+  private static final String ATTEMPTS_WITH_FAILURE_COUNT =
+      """
+      WITH runs AS (
+        SELECT id, type, target, payload, status, message, created_at, updated_at,
+               MAX(CASE WHEN status = 'SENT' THEN id ELSE 0 END)
+                 OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run
+          FROM notification_attempt
+      )
+      SELECT id, type, target, payload, status, message, created_at, updated_at,
+             SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END)
+               OVER (PARTITION BY run ORDER BY id) AS failure_count
+        FROM runs
+      """;
+
+  private static final RowMapper<NotificationAttempt> ROW_MAPPER =
+      (ResultSet rs, int _) ->
+          new NotificationAttempt(
               rs.getLong("id"),
-              rs.getString("tp"),
-              rs.getString("tgt"),
-              rs.getString("pld"),
-              rs.getString("st"),
-              rs.getInt("fc"),
-              rs.getInt("dc"),
-              rs.getString("bl"),
-              rs.getString("lm"),
-              rs.getTimestamp("crt"),
-              rs.getTimestamp("upd"));
+              rs.getString("type"),
+              rs.getString("target"),
+              rs.getString("payload"),
+              rs.getString("status"),
+              rs.getString("message"),
+              rs.getTimestamp("created_at"),
+              rs.getTimestamp("updated_at"),
+              rs.getInt("failure_count"));
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -45,127 +55,122 @@ public class JdbcNotificationRepository implements NotificationRepository {
   public int countRecentByTarget(String target) {
     Integer recentCount =
         jdbcTemplate.queryForObject(
-            "select count(*) "
-                + "from ntf_tx "
-                + "where tgt = ? "
-                + "  and crt >= dateadd('minute', -1, current_timestamp)",
+            """
+            SELECT COUNT(*)
+            FROM notification_attempt
+            WHERE target = ?
+              AND created_at >= CURRENT_TIMESTAMP - INTERVAL '1' MINUTE
+            """,
             Integer.class,
             target);
-    return recentCount == null ? 0 : recentCount.intValue();
+    return recentCount == null ? 0 : recentCount;
   }
 
   @Override
   public long open(String type, String target, String payload) {
-    long id = nextId();
-    int nextDispatchCount = maxDispatchCount() + 1;
-    int currentFailureCount = latestFailureCount();
-    String blocked = isBlockedTarget(target) ? "Y" : "N";
-    Timestamp now = new Timestamp(System.currentTimeMillis());
-
+    KeyHolder keys = new GeneratedKeyHolder();
     jdbcTemplate.update(
-        "insert into ntf_tx(id, tp, tgt, pld, st, fc, dc, bl, lm, crt, upd) "
-            + "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        id,
-        type,
-        target,
-        payload,
-        "N",
-        Integer.valueOf(currentFailureCount),
-        Integer.valueOf(nextDispatchCount),
-        blocked,
-        "START",
-        now,
-        now);
-
-    return id;
+        connection -> {
+          PreparedStatement statement =
+              connection.prepareStatement(
+                  """
+                  INSERT INTO notification_attempt
+                    (type, target, payload, status, message, created_at, updated_at)
+                  VALUES (?, ?, ?, 'NEW', 'START', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                  """,
+                  Statement.RETURN_GENERATED_KEYS);
+          statement.setString(1, type);
+          statement.setString(2, target);
+          statement.setString(3, payload);
+          return statement;
+        },
+        keys);
+    return keys.getKey().longValue();
   }
 
   @Override
   public int latestFailureCount() {
-    List<Integer> results =
-        jdbcTemplate.query(
-            "select fc from ntf_tx order by id desc limit 1",
-            (ResultSet resultSet, int rowNum) -> Integer.valueOf(resultSet.getInt(1)));
-    return results.isEmpty() ? 0 : results.get(0).intValue();
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM notification_attempt
+            WHERE status = 'ERROR'
+              AND id > COALESCE(
+                (SELECT MAX(id) FROM notification_attempt WHERE status = 'SENT'),
+                0
+              )
+            """,
+            Integer.class);
+    return count == null ? 0 : count;
   }
 
   @Override
   public void recordFailure(long id, String target, String error) {
-    int nextFailureCount = latestFailureCount() + 1;
     jdbcTemplate.update(
-        "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ? where id = ?",
-        "E",
-        Integer.valueOf(nextFailureCount),
+        """
+        UPDATE notification_attempt
+        SET status = 'ERROR', message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
         shorten(error),
-        new Timestamp(System.currentTimeMillis()),
-        Long.valueOf(id));
+        id);
     System.out.println("[DB AUDIT] Inserted failure record for " + target + ": " + error);
   }
 
   @Override
   public void resetFailures(long id) {
     jdbcTemplate.update(
-        "update ntf_tx set st = ?, fc = ?, lm = ?, upd = ? where id = ?",
-        "S",
-        Integer.valueOf(0),
-        "SENT",
-        new Timestamp(System.currentTimeMillis()),
-        Long.valueOf(id));
+        """
+        UPDATE notification_attempt
+        SET status = 'SENT', message = 'SENT', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        id);
   }
 
   @Override
   public void recordUnsupportedType(long id, String type) {
     jdbcTemplate.update(
-        "update ntf_tx set st = ?, lm = ?, upd = ? where id = ?",
-        "U",
+        """
+        UPDATE notification_attempt
+        SET status = 'UNKNOWN', message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
         shorten("Unsupported type: " + type),
-        new Timestamp(System.currentTimeMillis()),
-        Long.valueOf(id));
+        id);
   }
 
   @Override
   public void markSkipped(long id, String message) {
     jdbcTemplate.update(
-        "update ntf_tx set st = ?, lm = ?, upd = ? where id = ?",
-        "R",
+        """
+        UPDATE notification_attempt
+        SET status = 'REJECTED', message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
         shorten(message),
-        new Timestamp(System.currentTimeMillis()),
-        Long.valueOf(id));
+        id);
   }
 
   @Override
-  public Optional<NotificationTransaction> findById(long id) {
-    List<NotificationTransaction> rows =
-        jdbcTemplate.query("select * from ntf_tx where id = ?", ROW_MAPPER, Long.valueOf(id));
+  public Optional<NotificationAttempt> findById(long id) {
+    List<NotificationAttempt> rows =
+        jdbcTemplate.query(ATTEMPTS_WITH_FAILURE_COUNT + " WHERE id = ?", ROW_MAPPER, id);
     return rows.stream().findFirst();
   }
 
   @Override
-  public Optional<NotificationTransaction> findLatest() {
-    List<NotificationTransaction> rows =
-        jdbcTemplate.query("select * from ntf_tx order by id desc limit 1", ROW_MAPPER);
+  public Optional<NotificationAttempt> findLatest() {
+    List<NotificationAttempt> rows =
+        jdbcTemplate.query(ATTEMPTS_WITH_FAILURE_COUNT + " ORDER BY id DESC LIMIT 1", ROW_MAPPER);
     return rows.stream().findFirst();
   }
 
   @Override
-  public List<NotificationTransaction> findHistory() {
+  public List<NotificationAttempt> findHistory() {
     return jdbcTemplate.query(
-        "select * from ntf_tx order by id desc limit " + HISTORY_LIMIT, ROW_MAPPER);
-  }
-
-  private long nextId() {
-    Long maxId = jdbcTemplate.queryForObject("select coalesce(max(id), 0) from ntf_tx", Long.class);
-    return (maxId == null ? 0L : maxId.longValue()) + 1L;
-  }
-
-  private int maxDispatchCount() {
-    Integer latestDispatchCount =
-        jdbcTemplate.queryForObject("select coalesce(max(dc), 0) from ntf_tx", Integer.class);
-    return latestDispatchCount == null ? 0 : latestDispatchCount.intValue();
-  }
-
-  private static boolean isBlockedTarget(String target) {
-    return target != null && target.toLowerCase().contains("blocked");
+        ATTEMPTS_WITH_FAILURE_COUNT + " ORDER BY id DESC LIMIT " + HISTORY_LIMIT, ROW_MAPPER);
   }
 
   private static String shorten(String value) {

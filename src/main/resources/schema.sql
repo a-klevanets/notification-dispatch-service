@@ -1,31 +1,25 @@
-drop table if exists ntf_tx;
+DROP TABLE IF EXISTS notification_attempt;
 
-create table ntf_tx (
-    id bigint primary key,
-    tp varchar(32) not null,
-    tgt varchar(255) not null,
-    pld clob,
-    st varchar(1) not null,
-    fc integer not null,
-    dc integer not null,
-    bl varchar(1) not null,
-    lm varchar(255),
-    crt timestamp not null,
-    upd timestamp not null
+CREATE TABLE notification_attempt (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    type VARCHAR(32) NOT NULL,
+    target VARCHAR(255) NOT NULL,
+    payload TEXT NOT NULL,
+    status VARCHAR(16) NOT NULL CHECK (status IN ('NEW', 'SENT', 'ERROR', 'UNKNOWN', 'REJECTED')),
+    message VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
 );
 
-comment on table ntf_tx is 'Notification transaction log';
-comment on column ntf_tx.id is 'Primary key for the notification transaction';
-comment on column ntf_tx.tp is 'Notification type';
-comment on column ntf_tx.tgt is 'Target destination for the notification';
-comment on column ntf_tx.pld is 'Notification payload content';
-comment on column ntf_tx.st is 'Current notification state (N=NEW, S=SENT, E=ERR, U=UNKNOWN, R=REJECTED)';
-comment on column ntf_tx.fc is 'Failure counter';
-comment on column ntf_tx.dc is 'Dispatch counter';
-comment on column ntf_tx.bl is 'Whether the notification is blacklisted or blocked (Y/N)';
-comment on column ntf_tx.lm is 'Last message or error detail';
-comment on column ntf_tx.crt is 'Created timestamp';
-comment on column ntf_tx.upd is 'Last updated timestamp';
+COMMENT ON TABLE notification_attempt IS 'One row per dispatch attempt; the state of the service is a query over these rows';
+COMMENT ON COLUMN notification_attempt.id IS 'Identity, and the ordinal number of the attempt';
+COMMENT ON COLUMN notification_attempt.type IS 'EMAIL, SMS, PUSH or whatever arrived';
+COMMENT ON COLUMN notification_attempt.target IS 'Recipient: an address, a phone number or a device id';
+COMMENT ON COLUMN notification_attempt.payload IS 'The text of the notification';
+COMMENT ON COLUMN notification_attempt.status IS 'NEW while the attempt runs, then its outcome';
+COMMENT ON COLUMN notification_attempt.message IS 'The last thing said about the attempt: START, the error, or SENT, cut at 255 characters';
+COMMENT ON COLUMN notification_attempt.created_at IS 'When the attempt was written, by the database clock';
+COMMENT ON COLUMN notification_attempt.updated_at IS 'When the outcome was written, by the database clock';
 
-create index ix_ntf_tx_tgt on ntf_tx (tgt);
-create index ix_ntf_tx_st on ntf_tx (st);
+CREATE INDEX ix_notification_attempt_target ON notification_attempt (target, created_at);
+CREATE INDEX ix_notification_attempt_status ON notification_attempt (status, id);

@@ -8,8 +8,8 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Service;
 
+import com.example.notification.persistence.NotificationAttempt;
 import com.example.notification.persistence.NotificationRepository;
-import com.example.notification.persistence.NotificationTransaction;
 
 @Service
 public class LegacyNotificationEngine implements InitializingBean {
@@ -78,26 +78,42 @@ public class LegacyNotificationEngine implements InitializingBean {
   }
 
   private boolean isUserBlacklistedOrRateLimited(String target) {
-    if (target.toLowerCase().contains("blocked")) {
+    if (isBlacklisted(target)) {
       return true;
     }
     return repository.countRecentByTarget(target) >= 3;
   }
 
-  private static LegacyNotificationResponse toResponse(NotificationTransaction row) {
+  private static boolean isBlacklisted(String target) {
+    return target.toLowerCase().contains("blocked");
+  }
+
+  private static LegacyNotificationResponse toResponse(NotificationAttempt row) {
     LegacyNotificationResponse response = new LegacyNotificationResponse();
     response.setId(row.id());
-    response.setType(row.tp());
-    response.setTarget(row.tgt());
-    response.setPayload(row.pld());
-    response.setStatus(row.st());
-    response.setFailureCount(row.fc());
-    response.setDispatchCount(row.dc());
-    response.setBlocked("Y".equals(row.bl()) ? "Y" : "N");
-    response.setMessage(row.lm());
-    response.setCreatedAt(row.crt());
-    response.setUpdatedAt(row.upd());
+    response.setType(row.type());
+    response.setTarget(row.target());
+    response.setPayload(row.payload());
+    response.setStatus(letterOf(row.status()));
+    response.setFailureCount(row.failureCount());
+    response.setDispatchCount((int) row.id());
+    response.setBlocked(isBlacklisted(row.target()) ? "Y" : "N");
+    response.setMessage(row.message());
+    response.setCreatedAt(row.createdAt());
+    response.setUpdatedAt(row.updatedAt());
     return response;
+  }
+
+  /** The wire letters the legacy API speaks; the log stores the words. */
+  private static String letterOf(String status) {
+    return switch (status) {
+      case "NEW" -> "N";
+      case "SENT" -> "S";
+      case "ERROR" -> "E";
+      case "UNKNOWN" -> "U";
+      case "REJECTED" -> "R";
+      default -> throw new IllegalArgumentException("Unknown status: " + status);
+    };
   }
 
   private interface INotificationHandler {
