@@ -30,8 +30,36 @@ contract:
 | Rate limit | a target with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
 | Input | a blank or missing target is refused before anything is written, and a missing payload is stored as empty text | `missingTargetIsRejected`; `missingPayloadIsStoredAsEmptyText` |
 | Unknown type | stored with status `U`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
-| Failures and breaker | a failed attempt is stored as `E` and counted; at three consecutive failures the breaker opens and attempts are stored as `R` | `threeFailuresOpenCircuitBreakerForNextAttempt` |
+| Failures and breaker | a failed attempt is stored as `E` and counted; at three consecutive failures the breaker opens and attempts are stored as `R`, and nothing closes it again | `threeFailuresOpenCircuitBreakerForNextAttempt` |
 | History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestStateIsNullBeforeAnythingIsSent` |
+
+## Decisions and trade-offs
+
+Each of these was a choice, not an omission, and each line names the alternative that lost.
+
+- **The database stays embedded, so the state lives per process.** A production deployment would run a
+  real database in a container and keep the log across restarts; here H2 in memory makes a run
+  reproducible and the tests independent of any environment. The price: the log is gone on shutdown,
+  and the rules computed from it go with it. A shared database would outlive the process and make
+  replicas possible, at the cost of a sequence and a lock instead of `max(id) + 1`.
+- **State is read from the log, not from the process.** The rate limit counts the attempt rows
+  of the last minute; the breaker reads the failure count stored on the newest row. Both are
+  answers about the log, so a restart has nothing to restore, and the alternative that lost is a
+  counter held in the running process: cheaper today, correct only while one process reads the log.
+- **Safeguards written out rather than taken from a library.** Resilience4j and Bucket4j cover this
+  ground, but their breaker recovers on a timer and their limiter refreshes a fixed period, while the
+  behaviour here is a sliding minute and a breaker that never closes - a limitation kept, not a design.
+  Adopting them would mean configuring them back to these semantics and paying a dependency for a
+  query and a comparison; both rules are a method and a single comparison, so a library can take
+  their place when the rules change.
+- **JDBC rather than an ORM.** One table, plain reads, and writes that must be visible to the next
+  call: an ORM would add mapping and flush semantics without removing code, and it would change when
+  a running instance sees its own writes.
+- **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
+  request key, and inventing one would change the contract rather than improve it.
+- **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm
+  against a failing transport; the task asks for neither, and the failure is already recorded and
+  counts toward the breaker.
 
 ## How changes are documented
 
