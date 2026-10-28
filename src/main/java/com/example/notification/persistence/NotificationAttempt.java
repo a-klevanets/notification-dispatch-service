@@ -2,14 +2,34 @@ package com.example.notification.persistence;
 
 import java.sql.Timestamp;
 
-/** One row of {@code notification_attempt} plus the failure count of its run, derived by the read. */
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.ReadOnlyProperty;
+import org.springframework.data.relational.core.mapping.Table;
+
+/**
+ * One row of {@code notification_attempt}. {@code schema.sql} leaves the identifiers unquoted, so H2
+ * folds them to upper case and this name has to stay upper case. {@code failureCount} is in no column;
+ * the window query's alias fills it.
+ */
+@Table("NOTIFICATION_ATTEMPT")
 public record NotificationAttempt(
-    long id,
+    @Id Long id,
     String type,
     String target,
     String payload,
-    String status,
+    Status status,
     String message,
-    Timestamp createdAt,
-    Timestamp updatedAt,
-    int failureCount) {}
+    @ReadOnlyProperty Timestamp createdAt,
+    @ReadOnlyProperty Timestamp updatedAt,
+    @ReadOnlyProperty Integer failureCount) {
+
+  /** The {@code status} column's words; {@code schema.sql} checks a row against the same five. */
+  public enum Status {
+    NEW, SENT, ERROR, UNKNOWN, REJECTED
+  }
+
+  /** A new attempt: its key, its timestamps and its count are the read's to fill, so they stay null. */
+  public static NotificationAttempt opened(String type, String target, String payload) {
+    return new NotificationAttempt(null, type, target, payload, Status.NEW, "START", null, null, null);
+  }
+}

@@ -9,6 +9,7 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Service;
 
 import com.example.notification.persistence.NotificationAttempt;
+import com.example.notification.persistence.NotificationAttempt.Status;
 import com.example.notification.persistence.NotificationRepository;
 
 @Service
@@ -37,7 +38,7 @@ public class LegacyNotificationEngine implements InitializingBean {
     String safeTarget = target != null ? target.trim() : null;
     String safePayload = payload != null ? payload : "";
 
-    if (safeTarget == null || safeTarget.length() == 0) {
+    if (safeTarget == null || safeTarget.isEmpty()) {
       throw new IllegalArgumentException("Target is mandatory.");
     }
 
@@ -48,23 +49,25 @@ public class LegacyNotificationEngine implements InitializingBean {
     long id = repository.open(safeType, safeTarget, safePayload);
 
     if (repository.latestFailureCount() >= 3) {
-      repository.markSkipped(id, "Circuit breaker OPEN via database state.");
+      repository.setState(id, Status.REJECTED, "Circuit breaker OPEN via database state.");
       throw new RuntimeException("Circuit breaker OPEN via database state.");
     }
 
     INotificationHandler handler = REGISTRY.get(safeType);
     if (handler == null) {
       System.out.println("LOGGING TO DB: Unknown type attempted -> " + type);
-      repository.recordUnsupportedType(id, safeType);
+      repository.setState(id, Status.UNKNOWN, "Unsupported type: " + safeType);
       throw new Exception("Unsupported type: " + type);
     }
 
     try {
       handler.execute(safeTarget, safePayload);
-      repository.resetFailures(id);
+      repository.setState(id, Status.SENT, "SENT");
       return toResponse(repository.findById(id).orElseThrow());
     } catch (Exception e) {
-      repository.recordFailure(id, safeTarget, e.getMessage());
+      repository.setState(id, Status.ERROR, e.getMessage());
+      System.out.println(
+          "[DB AUDIT] Inserted failure record for " + safeTarget + ": " + e.getMessage());
       throw e;
     }
   }
@@ -88,31 +91,30 @@ public class LegacyNotificationEngine implements InitializingBean {
     return target.toLowerCase().contains("blocked");
   }
 
-  private static LegacyNotificationResponse toResponse(NotificationAttempt row) {
+  private static LegacyNotificationResponse toResponse(NotificationAttempt attempt) {
     LegacyNotificationResponse response = new LegacyNotificationResponse();
-    response.setId(row.id());
-    response.setType(row.type());
-    response.setTarget(row.target());
-    response.setPayload(row.payload());
-    response.setStatus(letterOf(row.status()));
-    response.setFailureCount(row.failureCount());
-    response.setDispatchCount((int) row.id());
-    response.setBlocked(isBlacklisted(row.target()) ? "Y" : "N");
-    response.setMessage(row.message());
-    response.setCreatedAt(row.createdAt());
-    response.setUpdatedAt(row.updatedAt());
+    response.setId(attempt.id());
+    response.setType(attempt.type());
+    response.setTarget(attempt.target());
+    response.setPayload(attempt.payload());
+    response.setStatus(letterOf(attempt.status()));
+    response.setFailureCount(attempt.failureCount());
+    response.setDispatchCount(Math.toIntExact(attempt.id()));
+    response.setBlocked(isBlacklisted(attempt.target()) ? "Y" : "N");
+    response.setMessage(attempt.message());
+    response.setCreatedAt(attempt.createdAt());
+    response.setUpdatedAt(attempt.updatedAt());
     return response;
   }
 
   /** The wire letters the legacy API speaks; the log stores the words. */
-  private static String letterOf(String status) {
+  private static String letterOf(Status status) {
     return switch (status) {
-      case "NEW" -> "N";
-      case "SENT" -> "S";
-      case "ERROR" -> "E";
-      case "UNKNOWN" -> "U";
-      case "REJECTED" -> "R";
-      default -> throw new IllegalArgumentException("Unknown status: " + status);
+      case NEW -> "N";
+      case SENT -> "S";
+      case ERROR -> "E";
+      case UNKNOWN -> "U";
+      case REJECTED -> "R";
     };
   }
 
@@ -122,7 +124,7 @@ public class LegacyNotificationEngine implements InitializingBean {
 
   private static class EmailHandler implements INotificationHandler {
     @Override
-    public void execute(String target, String payload) throws Exception {
+    public void execute(String target, String payload) {
       if (target != null && target.contains("error")) {
         throw new RuntimeException("SMTP Timeout");
       }

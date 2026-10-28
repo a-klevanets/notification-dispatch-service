@@ -10,8 +10,9 @@ failures has tripped the breaker.
 - **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`
 - **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
   container (`bootJar`; the plain `jar` task is disabled)
-- **Persistence:** `spring-boot-starter-jdbc` over in-memory H2, one table `notification_attempt`;
-  `schema.sql` drops and recreates it on every startup
+- **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
+  `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
+  attempt and its two timestamps stay the database's, the timestamps through column defaults
 - **Tests:** twelve Jupiter integration tests in `LegacyNotificationEngineIntegrationTest`, run with
   `@SpringBootTest`
 
@@ -60,9 +61,13 @@ Each of these was a choice, not an omission, and each line names the alternative
   Adopting them would mean configuring them back to these semantics and paying a dependency for a
   query and a comparison; both rules are a method and a single comparison, so a library can take
   their place when the rules change.
-- **JDBC rather than an ORM.** One table, plain reads, and writes that must be visible to the next
-  call: an ORM would add mapping and flush semantics without removing code, and it would change when
-  a running instance sees its own writes.
+- **JDBC rather than an ORM, and Spring Data JDBC rather than hand-written mapping.** An ORM introduces
+  session state, dirty checking and deferred flushing without reducing code size: a write reaches the
+  database later than the call, and a read can be answered from the session. This flow writes and then
+  reads the same log within one request, so a delayed write means a stale read. Spring Data JDBC
+  executes each statement immediately and removes only the mapping. SQL is kept where the model cannot
+  state the intent: the failure-count window read, which has no column, and the state update,
+  which writes only the columns that changed.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm
