@@ -8,22 +8,28 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
- * The channels this service can deliver, keyed by type. Built once from every {@link NotificationSender}
- * component, so the set of channels is whatever is on the classpath rather than a list maintained by
- * hand; two senders claiming the same type fail startup.
+ * The channels this service can deliver, keyed by {@link NotificationType}. Built once from every
+ * {@link NotificationSender} component, so the set of channels is whatever is on the classpath rather
+ * than a list maintained by hand. Startup fails when two senders claim one type, or when a type has no
+ * sender at all.
  */
 @Component
 public class SenderRegistry {
 
-  private final Map<String, NotificationSender> senders;
+  private final Map<NotificationType, NotificationSender> senders;
 
   public SenderRegistry(List<NotificationSender> senders) {
     this.senders = senders.stream()
         .collect(Collectors.toUnmodifiableMap(NotificationSender::type, Function.identity()));
+    for (NotificationType type : NotificationType.values()) {
+      if (!this.senders.containsKey(type)) {
+        throw new IllegalStateException("No NotificationSender registered for " + type);
+      }
+    }
   }
 
-  /** The sender for a normalized type, or {@code null} when no channel answers to it. */
-  public NotificationSender find(String type) {
+  /** Never {@code null}: the registry is complete over every type. */
+  public NotificationSender senderFor(NotificationType type) {
     return senders.get(type);
   }
 }

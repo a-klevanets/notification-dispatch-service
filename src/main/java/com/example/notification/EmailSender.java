@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 class EmailSender implements NotificationSender {
 
   @Override
-  public String type() {
-    return "EMAIL";
+  public NotificationType type() {
+    return NotificationType.EMAIL;
   }
 
   @Override

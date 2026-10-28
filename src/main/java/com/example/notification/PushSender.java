@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 class PushSender implements NotificationSender {
 
   @Override
-  public String type() {
-    return "PUSH";
+  public NotificationType type() {
+    return NotificationType.PUSH;
   }
 
   @Override

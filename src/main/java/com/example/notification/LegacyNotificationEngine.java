@@ -1,6 +1,7 @@
 package com.example.notification;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -42,15 +43,15 @@ public class LegacyNotificationEngine {
       throw new RuntimeException("Circuit breaker OPEN via database state.");
     }
 
-    NotificationSender sender = senders.find(safeType);
-    if (sender == null) {
+    Optional<NotificationType> channel = NotificationType.parse(safeType);
+    if (channel.isEmpty()) {
       System.out.println("LOGGING TO DB: Unknown type attempted -> " + type);
       repository.setState(id, Status.UNKNOWN, "Unsupported type: " + safeType);
       throw new Exception("Unsupported type: " + type);
     }
 
     try {
-      sender.send(safeTarget, safePayload);
+      senders.senderFor(channel.get()).send(safeTarget, safePayload);
       repository.setState(id, Status.SENT, "SENT");
       return toResponse(repository.findById(id).orElseThrow());
     } catch (Exception e) {

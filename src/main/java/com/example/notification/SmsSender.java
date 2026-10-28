@@ -6,8 +6,8 @@ import org.springframework.stereotype.Component;
 class SmsSender implements NotificationSender {
 
   @Override
-  public String type() {
-    return "SMS";
+  public NotificationType type() {
+    return NotificationType.SMS;
   }
 
   @Override
