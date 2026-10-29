@@ -16,8 +16,33 @@ failures has tripped the breaker.
 - **Tests:** twelve Jupiter integration tests in `LegacyNotificationEngineIntegrationTest`, run with
   `@SpringBootTest`
 
-The framework underneath the service has been modernized; the dispatch logic in
-`LegacyNotificationEngine` has not been redesigned yet.
+The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
+the single method in `LegacyNotificationEngine`, guards inline. What changed is what that method
+hands back - the stored attempt rather than the response the API prints - and who delivers: a
+registry of senders keyed by notification type rather than a branch on the type string.
+
+## Endpoints
+
+The service listens on port 8080 and `./gradlew bootRun` starts it. The log is in memory, so every
+start begins empty.
+
+| Call | What comes back |
+|---|---|
+| `POST /api/legacy/notifications/send` with `{"type", "target", "payload"}` | the stored attempt, `200` |
+| `GET /api/legacy/notifications/history` | the twenty newest attempts, newest first |
+| `GET /api/legacy/notifications/latest` | the newest attempt, or an empty body while nothing is stored |
+
+An attempt is reported in the shape the legacy API uses: `status` is a letter (`N` new, `S` sent,
+`E` error, `U` unknown type, `R` refused by the breaker), `blocked` is `Y` or `N`, and
+`dispatchCount` repeats the id. The log keeps the words and the ids; the letters appear when the
+response is built.
+
+A refusal answers `application/problem+json` as defined by RFC 9457, with a code per reason - `400`
+blank target or unsupported type, `403` blacklisted, `429` rate limited, `503` breaker open, `502`
+channel failure. The legacy engine answered every one of these with `500`; giving each refusal its
+own code is the one place where the observable behaviour changed. The `type` is a slug under
+`errors.example.com`, a reserved example domain used as an identifier because the service has no
+error documentation to link to.
 
 ## Behaviour that must be preserved
 
@@ -68,6 +93,9 @@ Each of these was a choice, not an omission, and each line names the alternative
   executes each statement immediately and removes only the mapping. SQL is kept where the model cannot
   state the intent: the failure-count window read, which has no column, and the state update,
   which writes only the columns that changed.
+- **The response keeps the legacy shape.** The letters, `blocked` and `dispatchCount` repeating the
+  id are what the old endpoint already printed, and the task asks to keep the behaviour that matters
+  while also saying the API may not be ideal. The oddities stay: no caller exists to check a rename.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm
