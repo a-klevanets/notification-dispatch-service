@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.channel;
 
 import java.util.Arrays;
 import java.util.Optional;

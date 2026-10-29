@@ -7,6 +7,8 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 import com.example.notification.NotificationDispatchException.Reason;
+import com.example.notification.channel.NotificationType;
+import com.example.notification.channel.SenderRegistry;
 import com.example.notification.persistence.NotificationAttempt;
 import com.example.notification.persistence.NotificationAttempt.Status;
 import com.example.notification.persistence.NotificationRepository;

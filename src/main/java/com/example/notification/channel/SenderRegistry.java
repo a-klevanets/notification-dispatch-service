@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.channel;
 
 import java.util.List;
 import java.util.Map;

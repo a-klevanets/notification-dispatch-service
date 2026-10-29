@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.channel;
 
 import org.springframework.stereotype.Component;
 

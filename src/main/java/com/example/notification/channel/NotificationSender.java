@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.channel;
 
 /**
  * One delivery channel. {@link #type()} is the channel it answers to; adding a channel is a new
