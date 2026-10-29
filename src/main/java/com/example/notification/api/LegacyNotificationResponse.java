@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.api;
 
 import java.sql.Timestamp;
 

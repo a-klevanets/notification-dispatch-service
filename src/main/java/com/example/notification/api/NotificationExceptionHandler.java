@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.api;
 
 import java.net.URI;
 
@@ -8,6 +8,8 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import com.example.notification.NotificationDispatchException;
 
 /**
  * Maps dispatch refusals to an RFC 9457 body with a status per reason, so an unsupported type or a

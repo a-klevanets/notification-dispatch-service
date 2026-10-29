@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.api;
 
 public class LegacyNotificationRequest {
 
