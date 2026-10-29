@@ -2,7 +2,6 @@ package com.example.notification;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -22,7 +21,7 @@ public class LegacyNotificationEngine {
     this.senders = senders;
   }
 
-  public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload) {
+  public synchronized NotificationAttempt processNotification(String type, String target, String payload) {
 
     String safeType = type != null ? type.trim().toUpperCase() : "";
     String safeTarget = target != null ? target.trim() : null;
@@ -52,7 +51,7 @@ public class LegacyNotificationEngine {
     try {
       senders.senderFor(channel.get()).send(safeTarget, safePayload);
       repository.setState(id, Status.SENT, "SENT");
-      return toResponse(repository.findById(id).orElseThrow());
+      return repository.findById(id).orElseThrow();
     } catch (Exception e) {
       repository.setState(id, Status.ERROR, e.getMessage());
       System.out.println(
@@ -61,15 +60,15 @@ public class LegacyNotificationEngine {
     }
   }
 
-  public List<LegacyNotificationResponse> getHistory() {
-    return repository.findHistory().stream().map(LegacyNotificationEngine::toResponse).collect(Collectors.toList());
+  public List<NotificationAttempt> getHistory() {
+    return repository.findHistory();
   }
 
-  public LegacyNotificationResponse getLatestState() {
-    return repository.findLatest().map(LegacyNotificationEngine::toResponse).orElse(null);
+  public NotificationAttempt getLatestState() {
+    return repository.findLatest().orElse(null);
   }
 
-  private static boolean isBlacklisted(String target) {
+  public static boolean isBlacklisted(String target) {
     return target.toLowerCase().contains("blocked");
   }
 
@@ -85,30 +84,4 @@ public class LegacyNotificationEngine {
     }
   }
 
-  private static LegacyNotificationResponse toResponse(NotificationAttempt attempt) {
-    LegacyNotificationResponse response = new LegacyNotificationResponse();
-    response.setId(attempt.id());
-    response.setType(attempt.type());
-    response.setTarget(attempt.target());
-    response.setPayload(attempt.payload());
-    response.setStatus(letterOf(attempt.status()));
-    response.setFailureCount(attempt.failureCount());
-    response.setDispatchCount(Math.toIntExact(attempt.id()));
-    response.setBlocked(isBlacklisted(attempt.target()) ? "Y" : "N");
-    response.setMessage(attempt.message());
-    response.setCreatedAt(attempt.createdAt());
-    response.setUpdatedAt(attempt.updatedAt());
-    return response;
-  }
-
-  /** The wire letters the legacy API speaks; the log stores the words. */
-  private static String letterOf(Status status) {
-    return switch (status) {
-      case NEW -> "N";
-      case SENT -> "S";
-      case ERROR -> "E";
-      case UNKNOWN -> "U";
-      case REJECTED -> "R";
-    };
-  }
 }

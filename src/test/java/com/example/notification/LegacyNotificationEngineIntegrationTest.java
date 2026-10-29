@@ -10,6 +10,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 
+import com.example.notification.persistence.NotificationAttempt;
+import com.example.notification.persistence.NotificationAttempt.Status;
+
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 public class LegacyNotificationEngineIntegrationTest {
@@ -19,11 +22,11 @@ public class LegacyNotificationEngineIntegrationTest {
 
   @Test
   public void emailSuccessIsStoredAsSent() throws Exception {
-    LegacyNotificationResponse response = engine.processNotification("EMAIL", "buyer@example.com", "hello");
+    NotificationAttempt attempt = engine.processNotification("EMAIL", "buyer@example.com", "hello");
 
-    assertThat(response.getStatus()).isEqualTo("S");
-    assertThat(response.getDispatchCount()).isEqualTo(1);
-    assertThat(response.getFailureCount()).isZero();
+    assertThat(attempt.status()).isEqualTo(Status.SENT);
+    assertThat(attempt.id()).isEqualTo(1L);
+    assertThat(attempt.failureCount()).isZero();
     assertThat(engine.getHistory()).hasSize(1);
   }
 
@@ -50,9 +53,9 @@ public class LegacyNotificationEngineIntegrationTest {
       assertThat(ex.getMessage()).isEqualTo("Unsupported type: FAX");
     }
 
-    LegacyNotificationResponse latest = engine.getLatestState();
-    assertThat(latest.getStatus()).isEqualTo("U");
-    assertThat(latest.getMessage()).isEqualTo("Unsupported type: FAX");
+    NotificationAttempt latest = engine.getLatestState();
+    assertThat(latest.status()).isEqualTo(Status.UNKNOWN);
+    assertThat(latest.message()).isEqualTo("Unsupported type: FAX");
   }
 
   @Test
@@ -68,10 +71,10 @@ public class LegacyNotificationEngineIntegrationTest {
       }
     }
 
-    LegacyNotificationResponse failed = engine.getLatestState();
-    assertThat(failed.getStatus()).isEqualTo("E");
-    assertThat(failed.getMessage()).isEqualTo("SMTP Timeout");
-    assertThat(failed.getFailureCount()).isEqualTo(3);
+    NotificationAttempt failed = engine.getLatestState();
+    assertThat(failed.status()).isEqualTo(Status.ERROR);
+    assertThat(failed.message()).isEqualTo("SMTP Timeout");
+    assertThat(failed.failureCount()).isEqualTo(3);
 
     try {
       engine.processNotification("SMS", "ok-user@example.com", "hello");
@@ -82,10 +85,10 @@ public class LegacyNotificationEngineIntegrationTest {
       fail("Expected RuntimeException but got: " + ex.getClass().getName());
     }
 
-    LegacyNotificationResponse latest = engine.getLatestState();
-    assertThat(latest.getStatus()).isEqualTo("R");
-    assertThat(latest.getFailureCount()).isEqualTo(3);
-    assertThat(latest.getDispatchCount()).isEqualTo(4);
+    NotificationAttempt latest = engine.getLatestState();
+    assertThat(latest.status()).isEqualTo(Status.REJECTED);
+    assertThat(latest.failureCount()).isEqualTo(3);
+    assertThat(latest.id()).isEqualTo(4L);
   }
 
   @Test
@@ -106,13 +109,13 @@ public class LegacyNotificationEngineIntegrationTest {
 
   @Test
   public void smsAndPushAreDeliveredAndRecorded() throws Exception {
-    LegacyNotificationResponse sms = engine.processNotification("SMS", "+70000000000", "hello");
-    LegacyNotificationResponse push = engine.processNotification("PUSH", "device-42", "hello");
+    NotificationAttempt sms = engine.processNotification("SMS", "+70000000000", "hello");
+    NotificationAttempt push = engine.processNotification("PUSH", "device-42", "hello");
 
-    assertThat(sms.getType()).isEqualTo("SMS");
-    assertThat(sms.getStatus()).isEqualTo("S");
-    assertThat(push.getType()).isEqualTo("PUSH");
-    assertThat(push.getStatus()).isEqualTo("S");
+    assertThat(sms.type()).isEqualTo("SMS");
+    assertThat(sms.status()).isEqualTo(Status.SENT);
+    assertThat(push.type()).isEqualTo("PUSH");
+    assertThat(push.status()).isEqualTo(Status.SENT);
     assertThat(engine.getHistory()).hasSize(2);
   }
 
@@ -158,17 +161,17 @@ public class LegacyNotificationEngineIntegrationTest {
       assertThat(ex.getMessage()).isEqualTo("Unsupported type: null");
     }
 
-    LegacyNotificationResponse latest = engine.getLatestState();
-    assertThat(latest.getStatus()).isEqualTo("U");
-    assertThat(latest.getMessage()).isEqualTo("Unsupported type: ");
+    NotificationAttempt latest = engine.getLatestState();
+    assertThat(latest.status()).isEqualTo(Status.UNKNOWN);
+    assertThat(latest.message()).isEqualTo("Unsupported type: ");
   }
 
   @Test
   public void missingPayloadIsStoredAsEmptyText() throws Exception {
-    LegacyNotificationResponse response = engine.processNotification("PUSH", "device-42", null);
+    NotificationAttempt attempt = engine.processNotification("PUSH", "device-42", null);
 
-    assertThat(response.getStatus()).isEqualTo("S");
-    assertThat(response.getPayload()).isEmpty();
+    assertThat(attempt.status()).isEqualTo(Status.SENT);
+    assertThat(attempt.payload()).isEmpty();
   }
 
   @Test
@@ -182,8 +185,8 @@ public class LegacyNotificationEngineIntegrationTest {
       engine.processNotification("SMS", "+700000000" + i, "hello");
     }
 
-    List<LegacyNotificationResponse> history = engine.getHistory();
+    List<NotificationAttempt> history = engine.getHistory();
     assertThat(history).hasSize(20);
-    assertThat(history.getFirst().getTarget()).isEqualTo("+70000000020");
+    assertThat(history.getFirst().target()).isEqualTo("+70000000020");
   }
 }

@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import com.example.notification.persistence.NotificationAttempt;
+
 @Controller
 @RequestMapping("/api/legacy/notifications")
 public class LegacyNotificationController {
@@ -21,18 +23,25 @@ public class LegacyNotificationController {
   @RequestMapping(value = "/send", method = RequestMethod.POST)
   @ResponseBody
   public LegacyNotificationResponse send(@RequestBody LegacyNotificationRequest request) {
-    return engine.processNotification(request.getType(), request.getTarget(), request.getPayload());
+    return toResponse(
+        engine.processNotification(request.getType(), request.getTarget(), request.getPayload()));
   }
 
   @RequestMapping(value = "/history", method = RequestMethod.GET)
   @ResponseBody
   public List<LegacyNotificationResponse> history() {
-    return engine.getHistory();
+    return engine.getHistory().stream().map(this::toResponse).toList();
   }
 
   @RequestMapping(value = "/latest", method = RequestMethod.GET)
   @ResponseBody
   public LegacyNotificationResponse latest() {
-    return engine.getLatestState();
+    NotificationAttempt latest = engine.getLatestState();
+    return latest == null ? null : toResponse(latest);
+  }
+
+  private LegacyNotificationResponse toResponse(NotificationAttempt attempt) {
+    return LegacyNotificationResponse.from(
+        attempt, LegacyNotificationEngine.isBlacklisted(attempt.target()));
   }
 }

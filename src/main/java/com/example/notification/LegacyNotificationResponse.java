@@ -2,6 +2,9 @@ package com.example.notification;
 
 import java.sql.Timestamp;
 
+import com.example.notification.persistence.NotificationAttempt;
+import com.example.notification.persistence.NotificationAttempt.Status;
+
 public class LegacyNotificationResponse {
 
   private long id;
@@ -102,5 +105,33 @@ public class LegacyNotificationResponse {
 
   public void setUpdatedAt(Timestamp updatedAt) {
     this.updatedAt = updatedAt;
+  }
+
+  /** The wire shape of one attempt: letters for the status and the blacklist flag, id as the dispatch count. */
+  static LegacyNotificationResponse from(NotificationAttempt attempt, boolean blocked) {
+    LegacyNotificationResponse response = new LegacyNotificationResponse();
+    response.setId(attempt.id());
+    response.setType(attempt.type());
+    response.setTarget(attempt.target());
+    response.setPayload(attempt.payload());
+    response.setStatus(letterOf(attempt.status()));
+    response.setFailureCount(attempt.failureCount());
+    response.setDispatchCount(Math.toIntExact(attempt.id()));
+    response.setBlocked(blocked ? "Y" : "N");
+    response.setMessage(attempt.message());
+    response.setCreatedAt(attempt.createdAt());
+    response.setUpdatedAt(attempt.updatedAt());
+    return response;
+  }
+
+  /** The wire letters the legacy API speaks; the log stores the words. */
+  private static String letterOf(Status status) {
+    return switch (status) {
+      case NEW -> "N";
+      case SENT -> "S";
+      case ERROR -> "E";
+      case UNKNOWN -> "U";
+      case REJECTED -> "R";
+    };
   }
 }
