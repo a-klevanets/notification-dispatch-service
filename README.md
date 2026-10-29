@@ -13,8 +13,8 @@ failures has tripped the breaker.
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
   `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
   attempt and its two timestamps stay the database's, the timestamps through column defaults
-- **Tests:** twelve Jupiter integration tests in `LegacyNotificationEngineIntegrationTest`, run with
-  `@SpringBootTest`
+- **Tests:** thirteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
+  through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
 the single method in `LegacyNotificationEngine`, guards inline. What changed is what that method
@@ -42,7 +42,7 @@ blank target or unsupported type, `403` blacklisted, `429` rate limited, `503` b
 channel failure. The legacy engine answered every one of these with `500`; giving each refusal its
 own code is the one place where the observable behaviour changed. The `type` is a slug under
 `errors.example.com`, a reserved example domain used as an identifier because the service has no
-error documentation to link to.
+error documentation to link to. `NotificationApiIntegrationTest` asserts each of those six.
 
 ## Behaviour that must be preserved
 
@@ -51,13 +51,13 @@ contract:
 
 | Behaviour | What the service does | Covered by |
 |---|---|---|
-| Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `smsAndPushAreDeliveredAndRecorded` |
+| Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `allThreeChannelsAreDeliveredAndRecorded`; `unsupportedTypeIsStoredAsUnknown` |
 | Blacklist | a target containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
 | Rate limit | a target with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
 | Input | a blank or missing target is refused before anything is written, and a missing payload is stored as empty text | `missingTargetIsRejected`; `missingPayloadIsStoredAsEmptyText` |
 | Unknown type | stored with status `U`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
-| Failures and breaker | a failed attempt is stored as `E` and counted; at three consecutive failures the breaker opens and attempts are stored as `R`, and nothing closes it again | `threeFailuresOpenCircuitBreakerForNextAttempt` |
-| History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestStateIsNullBeforeAnythingIsSent` |
+| Failures and breaker | a failed attempt is stored as `E` and counted; at three consecutive failures the breaker opens and attempts are stored as `R`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt` |
+| History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestIsEmptyBeforeAnythingIsSent` |
 
 ## Decisions and trade-offs
 
