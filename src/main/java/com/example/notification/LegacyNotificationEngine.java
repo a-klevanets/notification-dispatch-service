@@ -54,10 +54,10 @@ public class LegacyNotificationEngine {
       repository.setState(id, Status.SENT, "SENT");
       return repository.findById(id).orElseThrow();
     } catch (Exception e) {
-      repository.setState(id, Status.ERROR, e.getMessage());
-      System.out.println(
-          "[DB AUDIT] Inserted failure record for " + safeTarget + ": " + e.getMessage());
-      throw new NotificationDispatchException(Reason.DELIVERY_FAILED, e.getMessage(), e);
+      String detail = e.getMessage() != null ? e.getMessage() : e.toString();
+      repository.setState(id, Status.ERROR, detail);
+      System.out.println("[DB AUDIT] Inserted failure record for " + safeTarget + ": " + detail);
+      throw new NotificationDispatchException(Reason.DELIVERY_FAILED, detail, e);
     }
   }
 
