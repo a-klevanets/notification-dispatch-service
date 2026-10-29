@@ -43,7 +43,9 @@ blank target or unsupported type, `403` blacklisted, `429` rate limited, `503` b
 channel failure. The legacy engine answered every one of these with `500`; giving each refusal its
 own code is the one place where the observable behaviour changed. The `type` is a slug under
 `errors.example.com`, a reserved example domain used as an identifier because the service has no
-error documentation to link to. `NotificationApiIntegrationTest` asserts each of those six.
+error documentation to link to. `NotificationApiIntegrationTest` asserts each of those six. Errors
+the framework raises before the dispatcher runs - an unreadable body, an unsupported media type, a
+wrong method, a path that does not exist - are rendered the same way.
 
 ## Behaviour that must be preserved
 
