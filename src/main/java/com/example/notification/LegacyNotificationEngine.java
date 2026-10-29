@@ -1,6 +1,7 @@
 package com.example.notification;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
@@ -23,7 +24,7 @@ public class LegacyNotificationEngine {
 
   public synchronized NotificationAttempt processNotification(String type, String target, String payload) {
 
-    String safeType = type != null ? type.trim().toUpperCase() : "";
+    String safeType = type != null ? type.trim().toUpperCase(Locale.ROOT) : "";
     String safeTarget = target != null ? target.trim() : null;
     String safePayload = payload != null ? payload : "";
 
@@ -69,7 +70,7 @@ public class LegacyNotificationEngine {
   }
 
   public static boolean isBlacklisted(String target) {
-    return target.toLowerCase().contains("blocked");
+    return target.toLowerCase(Locale.ROOT).contains("blocked");
   }
 
   private void assertNotBlacklisted(String target) {
