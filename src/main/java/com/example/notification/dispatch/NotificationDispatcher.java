@@ -77,14 +77,15 @@ public class NotificationDispatcher {
 
     try {
       senders.senderFor(channel.get()).send(safeTarget, safePayload);
-      repository.setState(id, Status.SENT, "SENT");
-      return repository.findById(id).orElseThrow();
     } catch (Exception e) {
       String detail = e.getMessage() != null ? e.getMessage() : e.toString();
       repository.setState(id, Status.ERROR, detail);
       System.out.println("[DB AUDIT] Inserted failure record for " + safeTarget + ": " + detail);
       throw new NotificationDispatchException(Reason.DELIVERY_FAILED, detail, e);
     }
+
+    repository.setState(id, Status.SENT, "SENT");
+    return repository.findById(id).orElseThrow();
   }
 
   public List<NotificationAttempt> getHistory() {
