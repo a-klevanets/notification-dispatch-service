@@ -17,9 +17,10 @@ failures has tripped the breaker.
   through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
-the single method in `LegacyNotificationEngine`, guards inline. What changed is what that method
-hands back - the stored attempt rather than the response the API prints - and who delivers: a
-registry of senders keyed by notification type rather than a branch on the type string.
+one method, in `NotificationDispatcher`. The three safeguards answer from their own classes; the
+method keeps their order, the audit writes and the refusals. What changed is what that method hands
+back - the stored attempt rather than the response the API prints - and who delivers: a registry of
+senders keyed by notification type rather than a branch on the type string.
 
 ## Endpoints
 
@@ -84,7 +85,7 @@ Each of these was a choice, not an omission, and each line names the alternative
   ground, but their breaker recovers on a timer and their limiter refreshes a fixed period, while the
   behaviour here is a sliding minute and a breaker that never closes - a limitation kept, not a design.
   Adopting them would mean configuring them back to these semantics and paying a dependency for a
-  query and a comparison; both rules are a method and a single comparison, so a library can take
+  query and a comparison; both rules are a class holding a single comparison, so a library can take
   their place when the rules change.
 - **JDBC rather than an ORM, and Spring Data JDBC rather than hand-written mapping.** An ORM introduces
   session state, dirty checking and deferred flushing without reducing code size: a write reaches the

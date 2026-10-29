@@ -1,4 +1,4 @@
-package com.example.notification;
+package com.example.notification.dispatch;
 
 import java.util.List;
 import java.util.Locale;
@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
+import com.example.notification.NotificationDispatchException;
 import com.example.notification.NotificationDispatchException.Reason;
 import com.example.notification.channel.NotificationType;
 import com.example.notification.channel.SenderRegistry;
@@ -14,17 +15,28 @@ import com.example.notification.persistence.NotificationAttempt.Status;
 import com.example.notification.persistence.NotificationRepository;
 
 @Service
-public class LegacyNotificationEngine {
+public class NotificationDispatcher {
 
   private final NotificationRepository repository;
   private final SenderRegistry senders;
+  private final Blacklist blacklist;
+  private final RateLimit rateLimit;
+  private final CircuitBreaker breaker;
 
-  public LegacyNotificationEngine(NotificationRepository repository, SenderRegistry senders) {
+  public NotificationDispatcher(
+      NotificationRepository repository,
+      SenderRegistry senders,
+      Blacklist blacklist,
+      RateLimit rateLimit,
+      CircuitBreaker breaker) {
     this.repository = repository;
     this.senders = senders;
+    this.blacklist = blacklist;
+    this.rateLimit = rateLimit;
+    this.breaker = breaker;
   }
 
-  public synchronized NotificationAttempt processNotification(String type, String target, String payload) {
+  public synchronized NotificationAttempt dispatch(String type, String target, String payload) {
 
     String safeType = type != null ? type.trim().toUpperCase(Locale.ROOT) : "";
     String safeTarget = target != null ? target.trim() : null;
@@ -34,12 +46,16 @@ public class LegacyNotificationEngine {
       throw new NotificationDispatchException(Reason.INVALID_REQUEST, "Target is mandatory.");
     }
 
-    assertNotBlacklisted(safeTarget);
-    assertNotRateLimited(safeTarget);
+    if (blacklist.blocks(safeTarget)) {
+      throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");
+    }
+    if (rateLimit.exceeded(safeTarget)) {
+      throw new NotificationDispatchException(Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
+    }
 
     long id = repository.open(safeType, safeTarget, safePayload);
 
-    if (repository.latestFailureCount() >= 3) {
+    if (breaker.isOpen()) {
       repository.setState(id, Status.REJECTED, "Circuit breaker OPEN via database state.");
       throw new NotificationDispatchException(Reason.CIRCUIT_BREAKER_OPEN, "Circuit breaker OPEN via database state.");
     }
@@ -70,21 +86,4 @@ public class LegacyNotificationEngine {
   public NotificationAttempt getLatestState() {
     return repository.findLatest().orElse(null);
   }
-
-  public static boolean isBlacklisted(String target) {
-    return target.toLowerCase(Locale.ROOT).contains("blocked");
-  }
-
-  private void assertNotBlacklisted(String target) {
-    if (isBlacklisted(target)) {
-      throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");
-    }
-  }
-
-  private void assertNotRateLimited(String target) {
-    if (repository.countRecentByTarget(target) >= 3) {
-      throw new NotificationDispatchException(Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
-    }
-  }
-
 }
