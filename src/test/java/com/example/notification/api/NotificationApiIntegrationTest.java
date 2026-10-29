@@ -185,6 +185,25 @@ public class NotificationApiIntegrationTest {
     expectNothingIsStored();
   }
 
+  /** One over each column's width; the insert would fail, so the dispatcher refuses first. */
+  @Test
+  public void overlongTypeAndTargetAreRejected() throws Exception {
+    expectProblem(
+        send("T".repeat(33), "ops@example.com"),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "Type exceeds 32 characters.");
+    expectProblem(
+        send("EMAIL", "t".repeat(256)),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "Target exceeds 255 characters.");
+
+    expectNothingIsStored();
+  }
+
   @Test
   public void missingPayloadIsStoredAsEmptyText() throws Exception {
     send("""

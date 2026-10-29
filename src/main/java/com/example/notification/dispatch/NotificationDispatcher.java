@@ -45,6 +45,14 @@ public class NotificationDispatcher {
     if (safeTarget == null || safeTarget.isEmpty()) {
       throw new NotificationDispatchException(Reason.INVALID_REQUEST, "Target is mandatory.");
     }
+    if (safeTarget.length() > NotificationRepository.TARGET_LENGTH) {
+      throw new NotificationDispatchException(
+          Reason.INVALID_REQUEST, "Target exceeds " + NotificationRepository.TARGET_LENGTH + " characters.");
+    }
+    if (safeType.length() > NotificationRepository.TYPE_LENGTH) {
+      throw new NotificationDispatchException(
+          Reason.INVALID_REQUEST, "Type exceeds " + NotificationRepository.TYPE_LENGTH + " characters.");
+    }
 
     if (blacklist.blocks(safeTarget)) {
       throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");

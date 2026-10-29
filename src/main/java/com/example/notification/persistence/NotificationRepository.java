@@ -16,6 +16,12 @@ import com.example.notification.persistence.NotificationAttempt.Status;
  */
 public interface NotificationRepository extends Repository<NotificationAttempt, Long> {
 
+  /** The type column's width; a longer value fails the write. */
+  int TYPE_LENGTH = 32;
+
+  /** The target column's width; a longer value fails the write. */
+  int TARGET_LENGTH = 255;
+
   /** The message column's width; a longer text fails the write. */
   int MESSAGE_LENGTH = 255;
 

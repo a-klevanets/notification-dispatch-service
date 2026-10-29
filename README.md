@@ -39,7 +39,7 @@ An attempt is reported in the shape the legacy API uses: `status` is a letter (`
 response is built.
 
 A refusal answers `application/problem+json` as defined by RFC 9457, with a code per reason - `400`
-blank target or unsupported type, `403` blacklisted, `429` rate limited, `503` breaker open, `502`
+invalid input or unsupported type, `403` blacklisted, `429` rate limited, `503` breaker open, `502`
 channel failure. The legacy engine answered every one of these with `500`; giving each refusal its
 own code is the one place where the observable behaviour changed. The `type` is a slug under
 `errors.example.com`, a reserved example domain used as an identifier because the service has no
@@ -57,7 +57,7 @@ contract:
 | Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `allThreeChannelsAreDeliveredAndRecorded`; `unsupportedTypeIsStoredAsUnknown` |
 | Blacklist | a target containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
 | Rate limit | a target with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
-| Input | a blank or missing target is refused before anything is written, and a missing payload is stored as empty text | `missingTargetIsRejected`; `missingPayloadIsStoredAsEmptyText` |
+| Input | a blank or missing target is refused before anything is written, as is a type or target longer than its column, and a missing payload is stored as empty text | `missingTargetIsRejected`; `overlongTypeAndTargetAreRejected`; `missingPayloadIsStoredAsEmptyText` |
 | Unknown type | stored with status `U`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
 | Failures and breaker | a failed attempt is stored as `E` and counted, whatever its channel; at three consecutive failures the breaker opens and attempts are stored as `R`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt` |
 | History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestIsEmptyBeforeAnythingIsSent` |
