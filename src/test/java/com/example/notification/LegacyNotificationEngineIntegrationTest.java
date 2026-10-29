@@ -33,7 +33,7 @@ public class LegacyNotificationEngineIntegrationTest {
       engine.processNotification("SMS", "blocked-user@example.com", "hello");
       fail("Expected blocked target to fail");
     } catch (RuntimeException ex) {
-      assertThat(ex.getMessage()).isEqualTo("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
+      assertThat(ex.getMessage()).isEqualTo("Recipient is blacklisted.");
     } catch (Exception ex) {
       fail("Expected RuntimeException but got: " + ex.getClass().getName());
     }
@@ -98,8 +98,7 @@ public class LegacyNotificationEngineIntegrationTest {
       engine.processNotification("EMAIL", "busy@example.com", "hello");
       fail("Expected the rate limit to refuse the fourth attempt");
     } catch (RuntimeException ex) {
-      assertThat(ex.getMessage())
-          .isEqualTo("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
+      assertThat(ex.getMessage()).isEqualTo("Recipient exceeded the rate limit.");
     }
 
     assertThat(engine.getHistory()).hasSize(3);
@@ -122,14 +121,14 @@ public class LegacyNotificationEngineIntegrationTest {
     try {
       engine.processNotification("EMAIL", "  ", "hello");
       fail("Expected a blank target to be rejected");
-    } catch (IllegalArgumentException ex) {
+    } catch (NotificationDispatchException ex) {
       assertThat(ex.getMessage()).isEqualTo("Target is mandatory.");
     }
 
     try {
       engine.processNotification("EMAIL", null, "hello");
       fail("Expected a missing target to be rejected");
-    } catch (IllegalArgumentException ex) {
+    } catch (NotificationDispatchException ex) {
       assertThat(ex.getMessage()).isEqualTo("Target is mandatory.");
     }
 
@@ -142,8 +141,7 @@ public class LegacyNotificationEngineIntegrationTest {
       engine.processNotification("EMAIL", "unblocked@example.com", "hello");
       fail("Expected the substring check to refuse the target");
     } catch (RuntimeException ex) {
-      assertThat(ex.getMessage())
-          .isEqualTo("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
+      assertThat(ex.getMessage()).isEqualTo("Recipient is blacklisted.");
     } catch (Exception ex) {
       fail("Expected RuntimeException but got: " + ex.getClass().getName());
     }

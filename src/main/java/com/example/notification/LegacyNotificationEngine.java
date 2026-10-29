@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import com.example.notification.NotificationDispatchException.Reason;
 import com.example.notification.persistence.NotificationAttempt;
 import com.example.notification.persistence.NotificationAttempt.Status;
 import com.example.notification.persistence.NotificationRepository;
@@ -21,33 +22,31 @@ public class LegacyNotificationEngine {
     this.senders = senders;
   }
 
-  public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload)
-      throws Exception {
+  public synchronized LegacyNotificationResponse processNotification(String type, String target, String payload) {
 
     String safeType = type != null ? type.trim().toUpperCase() : "";
     String safeTarget = target != null ? target.trim() : null;
     String safePayload = payload != null ? payload : "";
 
     if (safeTarget == null || safeTarget.isEmpty()) {
-      throw new IllegalArgumentException("Target is mandatory.");
+      throw new NotificationDispatchException(Reason.INVALID_REQUEST, "Target is mandatory.");
     }
 
-    if (isUserBlacklistedOrRateLimited(safeTarget)) {
-      throw new RuntimeException("Business Rule Violation: User is blacklisted or rate-limited by DB policy.");
-    }
+    assertNotBlacklisted(safeTarget);
+    assertNotRateLimited(safeTarget);
 
     long id = repository.open(safeType, safeTarget, safePayload);
 
     if (repository.latestFailureCount() >= 3) {
       repository.setState(id, Status.REJECTED, "Circuit breaker OPEN via database state.");
-      throw new RuntimeException("Circuit breaker OPEN via database state.");
+      throw new NotificationDispatchException(Reason.CIRCUIT_BREAKER_OPEN, "Circuit breaker OPEN via database state.");
     }
 
     Optional<NotificationType> channel = NotificationType.parse(safeType);
     if (channel.isEmpty()) {
       System.out.println("LOGGING TO DB: Unknown type attempted -> " + type);
       repository.setState(id, Status.UNKNOWN, "Unsupported type: " + safeType);
-      throw new Exception("Unsupported type: " + type);
+      throw new NotificationDispatchException(Reason.UNSUPPORTED_TYPE, "Unsupported type: " + type);
     }
 
     try {
@@ -58,7 +57,7 @@ public class LegacyNotificationEngine {
       repository.setState(id, Status.ERROR, e.getMessage());
       System.out.println(
           "[DB AUDIT] Inserted failure record for " + safeTarget + ": " + e.getMessage());
-      throw e;
+      throw new NotificationDispatchException(Reason.DELIVERY_FAILED, e.getMessage(), e);
     }
   }
 
@@ -70,15 +69,20 @@ public class LegacyNotificationEngine {
     return repository.findLatest().map(LegacyNotificationEngine::toResponse).orElse(null);
   }
 
-  private boolean isUserBlacklistedOrRateLimited(String target) {
-    if (isBlacklisted(target)) {
-      return true;
-    }
-    return repository.countRecentByTarget(target) >= 3;
-  }
-
   private static boolean isBlacklisted(String target) {
     return target.toLowerCase().contains("blocked");
+  }
+
+  private void assertNotBlacklisted(String target) {
+    if (isBlacklisted(target)) {
+      throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");
+    }
+  }
+
+  private void assertNotRateLimited(String target) {
+    if (repository.countRecentByTarget(target) >= 3) {
+      throw new NotificationDispatchException(Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
+    }
   }
 
   private static LegacyNotificationResponse toResponse(NotificationAttempt attempt) {
