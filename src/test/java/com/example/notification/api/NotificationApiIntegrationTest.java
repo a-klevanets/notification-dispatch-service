@@ -157,17 +157,13 @@ public class NotificationApiIntegrationTest {
     send("EMAIL", "unblocked@example.com").andExpect(status().isOk());
   }
 
+  /** The guard reads the list on every dispatch, so an entry taken off it stops refusing. */
   @Test
   public void removingAnEntryLetsTheRecipientThrough() throws Exception {
     block("buyer@example.com");
-
-    mockMvc
-        .perform(delete(BLOCKLIST).param("recipient", "buyer@example.com"))
-        .andExpect(status().isNoContent());
+    unblock("buyer@example.com");
 
     send("EMAIL", "buyer@example.com").andExpect(status().isOk());
-
-    mockMvc.perform(get(BLOCKLIST)).andExpect(jsonPath("$.length()").value(0));
   }
 
   @Test
@@ -350,6 +346,12 @@ public class NotificationApiIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"recipient\": \"%s\"}".formatted(recipient)))
         .andExpect(status().isCreated());
+  }
+
+  private void unblock(String recipient) throws Exception {
+    mockMvc
+        .perform(delete(BLOCKLIST).param("recipient", recipient))
+        .andExpect(status().isNoContent());
   }
 
   private void expectNothingIsStored() throws Exception {

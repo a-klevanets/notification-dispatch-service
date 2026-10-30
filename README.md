@@ -15,8 +15,9 @@ failures has tripped the breaker.
   for the log and `blocked_recipient` for what the service refuses; `schema.sql` drops and recreates
   both on every startup. Spring Data owns the statements; the key of an attempt and its two timestamps
   stay the database's, the timestamps through column defaults
-- **Tests:** eighteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
-  through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
+- **Tests:** twenty-six Jupiter tests over two suites, `NotificationApiIntegrationTest` for the
+  dispatch rules and `BlocklistApiIntegrationTest` for the list's own contract, both driving the whole
+  service through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
 one method, in `NotificationDispatcher`. The three safeguards answer from their own classes; the
