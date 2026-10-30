@@ -14,7 +14,7 @@ failures has tripped the breaker.
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
   `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
   attempt and its two timestamps stay the database's, the timestamps through column defaults
-- **Tests:** sixteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
+- **Tests:** seventeen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
   through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
@@ -50,9 +50,10 @@ channel failure. The legacy engine answered every one of these with `500`; givin
 own code is the one place where the observable behaviour changed. The `type` is a slug under
 `errors.example.com`, a reserved example domain used as an identifier because the service has no
 error documentation to link to. `NotificationApiIntegrationTest` asserts each of those six. Errors
-the framework raises before the dispatcher runs - an unreadable body, an unsupported media type, a
-wrong method, a path that does not exist, a limit that is not a number - are rendered in the same
-media type, with the framework's own title and no slug.
+the framework raises before the dispatcher runs answer in the same body, each with its own slug: an
+unreadable body or a limit that is not a number as `invalid-request`, an unsupported media type as
+`unsupported-media-type` (`415`), a wrong method as `method-not-allowed` (`405`), and an unknown path
+as `not-found` (`404`). `frameworkRefusalsAreReportedInTheSameContract` asserts those five.
 
 ## Behaviour that must be preserved
 
@@ -114,6 +115,11 @@ Each of these was a choice, not an omission, and each line names the alternative
   answers with. Explicit checks in the dispatcher were the alternative: they keep the order of the
   refusals deterministic, which annotations give up - of two violations in one body, the one
   reported is whichever Spring lists first.
+- **The advice answers framework errors itself.** An unreadable body, a wrong method, an unknown path:
+  Spring Boot renders these from its own advice, and leaving it to do so costs nothing - except a body
+  with no `type`, so the same endpoint answered in two shapes. A handler per case the routes can reach
+  puts a slug on each. Naming the difference in this file, as it was before, was the alternative that
+  lost: a documented divergence is still a divergence a caller has to handle.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm

@@ -1,5 +1,6 @@
 package com.example.notification.api;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -288,6 +289,38 @@ public class NotificationApiIntegrationTest {
         "invalid-request",
         "Invalid request",
         "limit must be between 1 and 100.");
+  }
+
+  /** A request the framework rejects before the controller runs answers in the API's own shape. */
+  @Test
+  public void frameworkRefusalsAreReportedInTheSameContract() throws Exception {
+    expectProblem(
+        send("not json"), 400, "invalid-request", "Invalid request",
+        "The request body could not be read.");
+    expectProblem(
+        mockMvc.perform(post(NOTIFICATIONS).contentType(MediaType.TEXT_PLAIN).content("hello")),
+        415,
+        "unsupported-media-type",
+        "Unsupported media type",
+        "Only application/json is accepted.");
+    expectProblem(
+        mockMvc.perform(delete(NOTIFICATIONS)),
+        405,
+        "method-not-allowed",
+        "Method not allowed",
+        "DELETE is not supported.");
+    expectProblem(
+        mockMvc.perform(get(NOTIFICATIONS + "/missing")),
+        404,
+        "not-found",
+        "Not found",
+        "No resource at /api/v1/notifications/missing.");
+    expectProblem(
+        mockMvc.perform(get(NOTIFICATIONS).param("limit", "abc")),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "limit must be a number.");
   }
 
   private void expectProblem(
