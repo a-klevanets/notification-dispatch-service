@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +19,8 @@ import com.example.notification.persistence.NotificationRepository;
 
 @Service
 public class NotificationDispatcher {
+
+  private static final Logger log = LoggerFactory.getLogger(NotificationDispatcher.class);
 
   private final NotificationRepository repository;
   private final SenderRegistry senders;
@@ -58,7 +62,6 @@ public class NotificationDispatcher {
 
     Optional<NotificationType> channel = NotificationType.parse(safeType);
     if (channel.isEmpty()) {
-      System.out.println("LOGGING TO DB: Unknown type attempted -> " + type);
       repository.setState(id, Status.UNKNOWN, "Unsupported type: " + safeType);
       throw new NotificationDispatchException(Reason.UNSUPPORTED_TYPE, "Unsupported type: " + safeType);
     }
@@ -68,7 +71,7 @@ public class NotificationDispatcher {
     } catch (Exception e) {
       String detail = e.getMessage() != null ? e.getMessage() : e.toString();
       repository.setState(id, Status.ERROR, detail);
-      System.out.println("[DB AUDIT] Inserted failure record for " + safeTarget + ": " + detail);
+      log.warn("Delivery failed for {}: {}", safeTarget, detail);
       throw new NotificationDispatchException(Reason.DELIVERY_FAILED, detail, e);
     }
 
