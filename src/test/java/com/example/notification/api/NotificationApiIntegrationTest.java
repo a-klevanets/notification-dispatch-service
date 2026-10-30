@@ -118,6 +118,19 @@ public class NotificationApiIntegrationTest {
         .andExpect(jsonPath("$.status").value("REJECTED"));
   }
 
+  /** The breaker counts a run, not the total: a success between the failures keeps it closed. */
+  @Test
+  public void aSuccessBetweenFailuresKeepsTheBreakerClosed() throws Exception {
+    send("EMAIL", "error-one@example.com").andExpect(status().isBadGateway());
+    send("EMAIL", "error-two@example.com").andExpect(status().isBadGateway());
+    send("EMAIL", "buyer@example.com").andExpect(status().isOk());
+
+    send("EMAIL", "error-three@example.com").andExpect(status().isBadGateway());
+    send("EMAIL", "error-four@example.com").andExpect(status().isBadGateway());
+
+    send("SMS", "+70000000000").andExpect(status().isOk());
+  }
+
   @Test
   public void allThreeChannelsAreDeliveredAndRecorded() throws Exception {
     send("EMAIL", "buyer@example.com")

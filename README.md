@@ -13,7 +13,7 @@ failures has tripped the breaker.
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
   `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
   attempt and its two timestamps stay the database's, the timestamps through column defaults
-- **Tests:** fourteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
+- **Tests:** fifteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
   through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
@@ -60,7 +60,7 @@ contract:
 | Rate limit | a recipient with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
 | Input | a blank or missing recipient is refused before anything is written, as is a type or recipient longer than its column, and a missing payload is stored as empty text | `missingTargetIsRejected`; `overlongTypeAndTargetAreRejected`; `missingPayloadIsStoredAsEmptyText` |
 | Unknown type | stored with status `UNKNOWN`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
-| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; at three consecutive failures the breaker opens and attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt` |
+| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the failures since the last success, so a success resets it, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
 | History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestIsEmptyBeforeAnythingIsSent` |
 
 ## Decisions and trade-offs
