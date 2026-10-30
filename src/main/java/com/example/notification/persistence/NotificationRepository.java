@@ -21,6 +21,7 @@ public interface NotificationRepository extends Repository<NotificationAttempt, 
   int TYPE_LENGTH = 32;
   int TARGET_LENGTH = 255;
   int MESSAGE_LENGTH = 255;
+  int NOTE_LENGTH = 255;
 
   @Query(
       """
@@ -57,6 +58,19 @@ public interface NotificationRepository extends Repository<NotificationAttempt, 
   default void setState(long id, Status status, String message) {
     writeState(id, status, shorten(message));
   }
+
+  /**
+   * The one write the log allows after the fact: the attempt itself stays as it was recorded, and
+   * only the note a caller attaches changes. The row count tells whether the attempt exists.
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE notification_attempt
+      SET note = :note, updated_at = CURRENT_TIMESTAMP
+      WHERE id = :id
+      """)
+  int writeNote(long id, String note);
 
   NotificationAttempt save(NotificationAttempt attempt);
 

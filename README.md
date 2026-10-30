@@ -15,7 +15,7 @@ failures has tripped the breaker.
   for the log and `blocked_recipient` for what the service refuses; `schema.sql` drops and recreates
   both on every startup. Spring Data owns the statements; the key of an attempt and its two timestamps
   stay the database's, the timestamps through column defaults
-- **Tests:** twenty-six Jupiter tests over two suites, `NotificationApiIntegrationTest` for the
+- **Tests:** thirty Jupiter tests over two suites, `NotificationApiIntegrationTest` for the
   dispatch rules and `BlocklistApiIntegrationTest` for the list's own contract, both driving the whole
   service through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
@@ -34,6 +34,7 @@ start begins empty.
 |---|---|
 | `POST /api/v1/notifications` with `{"type", "recipient", "payload"}` | the stored attempt, `200` |
 | `GET /api/v1/notifications?limit=N` | up to `N` of the newest attempts, newest first; `N` defaults to `20` and is refused outside `1..100` |
+| `PATCH /api/v1/notifications/{id}` with `{"note"}` | the attempt with the note attached, `200`; `404` when no attempt has that id |
 | `GET /api/v1/blocklist` | the recipients the service refuses, one address per entry |
 | `POST /api/v1/blocklist` with `{"recipient"}` | adds an entry, `201`; adding the same address again changes nothing |
 | `DELETE /api/v1/blocklist?recipient=...` | removes the entry, `204`, whether or not the list held it |
@@ -52,13 +53,14 @@ An attempt is reported in the words the log stores: `status` is `NEW`, `SENT`, `
 said about the attempt - `START` while it runs, the delivery error, or `SENT`. Timestamps are
 ISO-8601 in UTC. The response is a projection of the row: nothing is encoded for the wire, nothing
 is computed at the boundary, and the column behind `recipient` keeps the log's own name, `target`.
+`note` is what an update attached, and it is null until one does.
 
 A refusal answers `application/problem+json` as defined by RFC 9457, with a code per reason - `400`
-invalid input or unsupported type, `403` blacklisted, `429` rate limited, `503` breaker open, `502`
-channel failure. The legacy engine answered every one of these with `500`; giving each refusal its
-own code is the one place where the observable behaviour changed. The `type` is a slug under
-`errors.example.com`, a reserved example domain used as an identifier because the service has no
-error documentation to link to. `NotificationApiIntegrationTest` asserts each of those six. Errors
+invalid input or unsupported type, `404` no such attempt, `403` blacklisted, `429` rate limited, `503`
+breaker open, `502` channel failure. The legacy engine answered every one of these with `500`; giving
+each refusal its own code is the one place where the observable behaviour changed. The `type` is a slug
+under `errors.example.com`, a reserved example domain used as an identifier because the service has no
+error documentation to link to. `NotificationApiIntegrationTest` asserts each of those seven. Errors
 the framework raises before the dispatcher runs answer in the same body, each with its own slug: an
 unreadable body or a limit that is not a number as `invalid-request`, an unsupported media type as
 `unsupported-media-type` (`415`), a wrong method as `method-not-allowed` (`405`), and an unknown path
@@ -78,6 +80,7 @@ contract:
 | Unknown type | stored with status `UNKNOWN`, then reported as an error | `unsupportedTypeIsStoredAsUnknown` |
 | Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the failures since the last success, so a success resets it, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
 | History | the history is the twenty newest attempts, newest first, and a caller may ask for fewer; an empty log answers with an empty list | `historyIsCappedAtTheTwentyNewestAttempts`; `historyHonoursTheLimitTheCallerAsksFor`; `limitOutsideTheAllowedRangeIsRefused` |
+| Update | an update attaches a note to an attempt; what the attempt recorded - type, recipient, payload, status, detail - stays as it was written | `noteIsAttachedWithoutRewritingTheAttempt`; `updateLeavesTheRecordAsItWasWritten`; `updateOnUnknownAttemptIsRefused`; `blankNoteIsRefused` |
 
 ## Decisions and trade-offs
 
@@ -135,6 +138,12 @@ Each of these was a choice, not an omission, and each line names the alternative
   now a table the API manages, so the refusal matches what an operator put there. A configuration
   file and pattern matching were the alternatives: the first cannot change without a restart, the
   second is the substring rule again with more syntax.
+- **An update attaches a note; it does not rewrite the attempt.** The bonus item asks for an update
+  endpoint, and a row is an audit record: an edited payload would claim a different message was sent,
+  and an edited status would move the breaker, which is the count of `ERROR` rows since the last
+  success. The one field an update may write is the note, which never took part in a delivery. Editing
+  the payload and resending as a new attempt were the alternatives: the first makes the log lie, the
+  second is a different operation and answers a different question.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm

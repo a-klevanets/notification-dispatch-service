@@ -31,7 +31,7 @@ import com.example.notification.NotificationDispatchException.Reason;
 public class NotificationExceptionHandler {
 
   @ExceptionHandler(NotificationDispatchException.class)
-  ResponseEntity<ProblemDetail> dispatchRefused(NotificationDispatchException ex) {
+  ResponseEntity<ProblemDetail> requestRefused(NotificationDispatchException ex) {
     return refuse(ex.reason(), ex.getMessage());
   }
 
@@ -48,8 +48,7 @@ public class NotificationExceptionHandler {
 
   @ExceptionHandler(NoResourceFoundException.class)
   ResponseEntity<ProblemDetail> noSuchPath(NoResourceFoundException ex) {
-    return refuse(
-        HttpStatus.NOT_FOUND, "not-found", "Not found", "No resource at /" + ex.getResourcePath() + ".");
+    return refuse(Reason.NOT_FOUND, "No resource at /" + ex.getResourcePath() + ".");
   }
 
   @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

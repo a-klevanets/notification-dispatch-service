@@ -2,6 +2,7 @@ package com.example.notification.api;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -280,6 +281,68 @@ public class NotificationApiIntegrationTest {
         .andExpect(jsonPath("$[1].recipient").value("+7000000001"));
   }
 
+  /** A note is attached beside the record; nothing the attempt observed is rewritten. */
+  @Test
+  public void noteIsAttachedWithoutRewritingTheAttempt() throws Exception {
+    send("EMAIL", "buyer@example.com").andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            patch(NOTIFICATIONS + "/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"note\": \"checked by hand\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.note").value("checked by hand"))
+        .andExpect(jsonPath("$.status").value("SENT"))
+        .andExpect(jsonPath("$.payload").value("hello"));
+
+    history(1)
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].note").value("checked by hand"))
+        .andExpect(jsonPath("$[0].detail").value("SENT"));
+  }
+
+  /** The other fields are not part of an update, so a caller sending them changes nothing. */
+  @Test
+  public void updateLeavesTheRecordAsItWasWritten() throws Exception {
+    send("EMAIL", "buyer@example.com").andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            patch(NOTIFICATIONS + "/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"note": "checked", "payload": "other", "recipient": "other@example.com"}"""))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.payload").value("hello"))
+        .andExpect(jsonPath("$.recipient").value("buyer@example.com"));
+  }
+
+  @Test
+  public void updateOnUnknownAttemptIsRefused() throws Exception {
+    expectProblem(
+        mockMvc.perform(
+            patch(NOTIFICATIONS + "/99")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"note\": \"late\"}")),
+        404,
+        "not-found",
+        "Not found",
+        "No attempt 99.");
+  }
+
+  @Test
+  public void blankNoteIsRefused() throws Exception {
+    expectProblem(
+        mockMvc.perform(
+            patch(NOTIFICATIONS + "/1").contentType(MediaType.APPLICATION_JSON).content("{}")),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "Note is mandatory.");
+  }
+
   @Test
   public void limitOutsideTheAllowedRangeIsRefused() throws Exception {
     expectProblem(
@@ -315,11 +378,11 @@ public class NotificationApiIntegrationTest {
         "Method not allowed",
         "DELETE is not supported.");
     expectProblem(
-        mockMvc.perform(get(NOTIFICATIONS + "/missing")),
+        mockMvc.perform(get(NOTIFICATIONS + "/1/history")),
         404,
         "not-found",
         "Not found",
-        "No resource at /api/v1/notifications/missing.");
+        "No resource at /api/v1/notifications/1/history.");
     expectProblem(
         mockMvc.perform(get(NOTIFICATIONS).param("limit", "abc")),
         400,

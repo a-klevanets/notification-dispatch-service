@@ -5,14 +5,15 @@ import java.util.Locale;
 import org.springframework.http.HttpStatus;
 
 /**
- * A dispatch refusal. The reason carries the HTTP status and title the API answers with; the message
- * keeps the specific detail.
+ * A refusal: what a request asked for cannot be done. The reason carries the HTTP status and title
+ * the API answers with; the message keeps the specific detail.
  */
 public class NotificationDispatchException extends RuntimeException {
 
-  /** Why a dispatch was refused and the HTTP status it maps to. */
+  /** Why a request was refused and the HTTP status it maps to. */
   public enum Reason {
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "Invalid request"),
+    NOT_FOUND(HttpStatus.NOT_FOUND, "Not found"),
     UNSUPPORTED_TYPE(HttpStatus.BAD_REQUEST, "Unsupported notification type"),
     BLACKLISTED(HttpStatus.FORBIDDEN, "Recipient blacklisted"),
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Recipient rate-limited"),

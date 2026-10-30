@@ -82,4 +82,15 @@ public class NotificationDispatcher {
   public List<NotificationAttempt> getHistory(int limit) {
     return repository.findByOrderByIdDesc(Limit.of(limit));
   }
+
+  /**
+   * The attempt is a record of what happened, so an update may only attach a note that took no part
+   * in the delivery; the fields the log observed stay as they were written.
+   */
+  public NotificationAttempt note(long id, String note) {
+    if (repository.writeNote(id, note) == 0) {
+      throw new NotificationDispatchException(Reason.NOT_FOUND, "No attempt " + id + ".");
+    }
+    return repository.findById(id).orElseThrow();
+  }
 }

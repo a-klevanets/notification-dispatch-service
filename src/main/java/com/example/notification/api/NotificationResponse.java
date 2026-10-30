@@ -16,6 +16,7 @@ public record NotificationResponse(
     String payload,
     NotificationAttempt.Status status,
     String detail,
+    String note,
     Timestamp createdAt,
     Timestamp updatedAt) {
 
@@ -27,6 +28,7 @@ public record NotificationResponse(
         attempt.payload(),
         attempt.status(),
         attempt.message(),
+        attempt.note(),
         attempt.createdAt(),
         attempt.updatedAt());
   }

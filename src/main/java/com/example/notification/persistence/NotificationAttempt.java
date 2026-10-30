@@ -18,6 +18,7 @@ public record NotificationAttempt(
     String payload,
     Status status,
     String message,
+    String note,
     @ReadOnlyProperty Timestamp createdAt,
     @ReadOnlyProperty Timestamp updatedAt) {
 
@@ -28,6 +29,7 @@ public record NotificationAttempt(
 
   /** A new attempt: its key and its timestamps are the read's to fill, so they stay null. */
   public static NotificationAttempt opened(String type, String target, String payload) {
-    return new NotificationAttempt(null, type, target, payload, Status.NEW, "START", null, null);
+    return new NotificationAttempt(
+        null, type, target, payload, Status.NEW, "START", null, null, null);
   }
 }
