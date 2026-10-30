@@ -18,20 +18,18 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
- * The contract, asserted where a caller meets it: the rules the service enforces, the status and the
- * RFC 9457 body each refusal answers with, the shape a stored attempt is reported in, and the two read
- * endpoints. Nothing is mocked - a real context over a real H2. The four tests the template shipped
- * with come first, the rest follow the order of the contract table in the README. MockMvc is wired
- * from the context here rather than by {@code @AutoConfigureMockMvc}, which Spring Boot 4 moved into a
+ * The contract, asserted where a caller meets it: the rules the service enforces, the status and
+ * the RFC 9457 body each refusal answers with, the shape a stored attempt is reported in, and the
+ * two read endpoints. Nothing is mocked - a real context over a real H2. MockMvc is wired from the
+ * context here rather than by {@code @AutoConfigureMockMvc}, which Spring Boot 4 moved into a
  * {@code spring-boot-webmvc-test} module this build does not carry.
  */
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 public class NotificationApiIntegrationTest {
 
-  private static final String SEND = "/api/legacy/notifications/send";
-  private static final String HISTORY = "/api/legacy/notifications/history";
-  private static final String LATEST = "/api/legacy/notifications/latest";
+  private static final String NOTIFICATIONS = "/api/v1/notifications";
+  private static final String LATEST = NOTIFICATIONS + "/latest";
 
   @Autowired
   private WebApplicationContext context;
@@ -50,22 +48,21 @@ public class NotificationApiIntegrationTest {
         .andExpect(content().contentType(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.id").value(1))
         .andExpect(jsonPath("$.type").value("EMAIL"))
-        .andExpect(jsonPath("$.target").value("buyer@example.com"))
+        .andExpect(jsonPath("$.recipient").value("buyer@example.com"))
         .andExpect(jsonPath("$.payload").value("hello"))
-        .andExpect(jsonPath("$.status").value("S"))
-        .andExpect(jsonPath("$.failureCount").value(0))
-        .andExpect(jsonPath("$.dispatchCount").value(1))
-        .andExpect(jsonPath("$.blocked").value("N"))
-        .andExpect(jsonPath("$.message").value("SENT"))
+        .andExpect(jsonPath("$.status").value("SENT"))
+        .andExpect(jsonPath("$.detail").value("SENT"))
         .andExpect(jsonPath("$.createdAt").exists())
-        .andExpect(jsonPath("$.updatedAt").exists());
+        .andExpect(jsonPath("$.updatedAt").exists())
+        .andExpect(jsonPath("$.dispatchCount").doesNotExist())
+        .andExpect(jsonPath("$.blocked").doesNotExist())
+        .andExpect(jsonPath("$.failureCount").doesNotExist());
 
     // Read back - the write path proves the mapper, not that the read endpoints use the same query.
     latest()
         .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.target").value("buyer@example.com"))
+        .andExpect(jsonPath("$.recipient").value("buyer@example.com"))
         .andExpect(jsonPath("$.payload").value("hello"))
-        .andExpect(jsonPath("$.blocked").value("N"))
         .andExpect(jsonPath("$.createdAt").exists())
         .andExpect(jsonPath("$.updatedAt").exists());
 
@@ -95,8 +92,8 @@ public class NotificationApiIntegrationTest {
 
     latest()
         .andExpect(jsonPath("$.type").value("FAX"))
-        .andExpect(jsonPath("$.status").value("U"))
-        .andExpect(jsonPath("$.message").value("Unsupported type: FAX"));
+        .andExpect(jsonPath("$.status").value("UNKNOWN"))
+        .andExpect(jsonPath("$.detail").value("Unsupported type: FAX"));
   }
 
   @Test
@@ -106,9 +103,8 @@ public class NotificationApiIntegrationTest {
     send("EMAIL", "error-three@example.com").andExpect(status().isBadGateway());
 
     latest()
-        .andExpect(jsonPath("$.status").value("E"))
-        .andExpect(jsonPath("$.message").value("SMTP Timeout"))
-        .andExpect(jsonPath("$.failureCount").value(3));
+        .andExpect(jsonPath("$.status").value("ERROR"))
+        .andExpect(jsonPath("$.detail").value("SMTP Timeout"));
 
     expectProblem(
         send("SMS", "ok-user@example.com"),
@@ -119,24 +115,22 @@ public class NotificationApiIntegrationTest {
 
     latest()
         .andExpect(jsonPath("$.id").value(4))
-        .andExpect(jsonPath("$.dispatchCount").value(4))
-        .andExpect(jsonPath("$.status").value("R"))
-        .andExpect(jsonPath("$.failureCount").value(3));
+        .andExpect(jsonPath("$.status").value("REJECTED"));
   }
 
   @Test
   public void allThreeChannelsAreDeliveredAndRecorded() throws Exception {
     send("EMAIL", "buyer@example.com")
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("S"));
+        .andExpect(jsonPath("$.status").value("SENT"));
     send("SMS", "+70000000000")
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.type").value("SMS"))
-        .andExpect(jsonPath("$.status").value("S"));
+        .andExpect(jsonPath("$.status").value("SENT"));
     send("PUSH", "device-42")
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.type").value("PUSH"))
-        .andExpect(jsonPath("$.status").value("S"));
+        .andExpect(jsonPath("$.status").value("SENT"));
 
     history().andExpect(jsonPath("$.length()").value(3));
   }
@@ -173,14 +167,14 @@ public class NotificationApiIntegrationTest {
   @Test
   public void missingTargetIsRejected() throws Exception {
     expectProblem(
-        send("EMAIL", "  "), 400, "invalid-request", "Invalid request", "Target is mandatory.");
+        send("EMAIL", "  "), 400, "invalid-request", "Invalid request", "Recipient is mandatory.");
     expectProblem(
         send("""
             {"type": "EMAIL", "payload": "hello"}"""),
         400,
         "invalid-request",
         "Invalid request",
-        "Target is mandatory.");
+        "Recipient is mandatory.");
 
     expectNothingIsStored();
   }
@@ -199,7 +193,7 @@ public class NotificationApiIntegrationTest {
         400,
         "invalid-request",
         "Invalid request",
-        "Target exceeds 255 characters.");
+        "Recipient exceeds 255 characters.");
 
     expectNothingIsStored();
   }
@@ -207,9 +201,9 @@ public class NotificationApiIntegrationTest {
   @Test
   public void missingPayloadIsStoredAsEmptyText() throws Exception {
     send("""
-        {"type": "PUSH", "target": "device-42"}""")
+        {"type": "PUSH", "recipient": "device-42"}""")
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("S"))
+        .andExpect(jsonPath("$.status").value("SENT"))
         .andExpect(jsonPath("$.payload").value(""));
   }
 
@@ -218,15 +212,15 @@ public class NotificationApiIntegrationTest {
   public void missingTypeIsStoredAsUnknown() throws Exception {
     expectProblem(
         send("""
-            {"target": "ops@example.com", "payload": "hello"}"""),
+            {"recipient": "ops@example.com", "payload": "hello"}"""),
         400,
         "unsupported-type",
         "Unsupported notification type",
         "Unsupported type: null");
 
     latest()
-        .andExpect(jsonPath("$.status").value("U"))
-        .andExpect(jsonPath("$.message").value("Unsupported type: "));
+        .andExpect(jsonPath("$.status").value("UNKNOWN"))
+        .andExpect(jsonPath("$.detail").value("Unsupported type: "));
   }
 
   @Test
@@ -239,9 +233,8 @@ public class NotificationApiIntegrationTest {
         "SMTP Timeout");
 
     latest()
-        .andExpect(jsonPath("$.status").value("E"))
-        .andExpect(jsonPath("$.message").value("SMTP Timeout"))
-        .andExpect(jsonPath("$.failureCount").value(1));
+        .andExpect(jsonPath("$.status").value("ERROR"))
+        .andExpect(jsonPath("$.detail").value("SMTP Timeout"));
   }
 
   @Test
@@ -252,8 +245,8 @@ public class NotificationApiIntegrationTest {
 
     history()
         .andExpect(jsonPath("$.length()").value(20))
-        .andExpect(jsonPath("$[0].target").value("+70000000020"))
-        .andExpect(jsonPath("$[19].target").value("+7000000001"));
+        .andExpect(jsonPath("$[0].recipient").value("+70000000020"))
+        .andExpect(jsonPath("$[19].recipient").value("+7000000001"));
   }
 
   @Test
@@ -261,7 +254,6 @@ public class NotificationApiIntegrationTest {
     latest().andExpect(content().string(""));
   }
 
-  /** The problem body every refusal shares: a status, a type slug, a title and the detail. */
   private void expectProblem(
       ResultActions result, int status, String slug, String title, String detail) throws Exception {
     result
@@ -279,7 +271,7 @@ public class NotificationApiIntegrationTest {
 
   private ResultActions history() throws Exception {
     return mockMvc
-        .perform(get(HISTORY))
+        .perform(get(NOTIFICATIONS))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_JSON));
   }
@@ -288,12 +280,13 @@ public class NotificationApiIntegrationTest {
     return mockMvc.perform(get(LATEST)).andExpect(status().isOk());
   }
 
-  private ResultActions send(String type, String target) throws Exception {
+  private ResultActions send(String type, String recipient) throws Exception {
     return send("""
-        {"type": "%s", "target": "%s", "payload": "hello"}""".formatted(type, target));
+        {"type": "%s", "recipient": "%s", "payload": "hello"}""".formatted(type, recipient));
   }
 
   private ResultActions send(String body) throws Exception {
-    return mockMvc.perform(post(SEND).contentType(MediaType.APPLICATION_JSON).content(body));
+    return mockMvc
+        .perform(post(NOTIFICATIONS).contentType(MediaType.APPLICATION_JSON).content(body));
   }
 }

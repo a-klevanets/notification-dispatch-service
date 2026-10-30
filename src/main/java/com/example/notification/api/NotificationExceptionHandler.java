@@ -11,10 +11,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.example.notification.NotificationDispatchException;
 
-/**
- * Maps dispatch refusals to an RFC 9457 body with a status per reason, so an unsupported type or a
- * blacklisted recipient no longer surfaces as an opaque 500.
- */
 @RestControllerAdvice
 public class NotificationExceptionHandler {
 

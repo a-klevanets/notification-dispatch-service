@@ -7,9 +7,8 @@ import org.springframework.data.annotation.ReadOnlyProperty;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * One row of {@code notification_attempt}. {@code schema.sql} leaves the identifiers unquoted, so H2
- * folds them to upper case and this name has to stay upper case. {@code failureCount} is in no column;
- * the window query's alias fills it.
+ * One row of {@code notification_attempt}. {@code schema.sql} leaves the identifiers unquoted, so
+ * H2 folds them to upper case; Spring Data quotes this value, so it has to be the folded name.
  */
 @Table("NOTIFICATION_ATTEMPT")
 public record NotificationAttempt(
@@ -20,16 +19,15 @@ public record NotificationAttempt(
     Status status,
     String message,
     @ReadOnlyProperty Timestamp createdAt,
-    @ReadOnlyProperty Timestamp updatedAt,
-    @ReadOnlyProperty Integer failureCount) {
+    @ReadOnlyProperty Timestamp updatedAt) {
 
   /** The {@code status} column's words; {@code schema.sql} checks a row against the same five. */
   public enum Status {
     NEW, SENT, ERROR, UNKNOWN, REJECTED
   }
 
-  /** A new attempt: its key, its timestamps and its count are the read's to fill, so they stay null. */
+  /** A new attempt: its key and its timestamps are the read's to fill, so they stay null. */
   public static NotificationAttempt opened(String type, String target, String payload) {
-    return new NotificationAttempt(null, type, target, payload, Status.NEW, "START", null, null, null);
+    return new NotificationAttempt(null, type, target, payload, Status.NEW, "START", null, null);
   }
 }

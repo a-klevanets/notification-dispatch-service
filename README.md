@@ -29,14 +29,15 @@ start begins empty.
 
 | Call | What comes back |
 |---|---|
-| `POST /api/legacy/notifications/send` with `{"type", "target", "payload"}` | the stored attempt, `200` |
-| `GET /api/legacy/notifications/history` | the twenty newest attempts, newest first |
-| `GET /api/legacy/notifications/latest` | the newest attempt, or an empty body while nothing is stored |
+| `POST /api/v1/notifications` with `{"type", "recipient", "payload"}` | the stored attempt, `200` |
+| `GET /api/v1/notifications` | the twenty newest attempts, newest first |
+| `GET /api/v1/notifications/latest` | the newest attempt, or an empty body while nothing is stored |
 
-An attempt is reported in the shape the legacy API uses: `status` is a letter (`N` new, `S` sent,
-`E` error, `U` unknown type, `R` refused by the breaker), `blocked` is `Y` or `N`, and
-`dispatchCount` repeats the id. The log keeps the words and the ids; the letters appear when the
-response is built.
+An attempt is reported in the words the log stores: `status` is `NEW`, `SENT`, `ERROR`, `UNKNOWN` or
+`REJECTED`, `recipient` names who the notification went to, and `detail` carries the last thing
+said about the attempt - `START` while it runs, the delivery error, or `SENT`. Timestamps are
+ISO-8601 in UTC. The response is a projection of the row: nothing is encoded for the wire, nothing
+is computed at the boundary, and the column behind `recipient` keeps the log's own name, `target`.
 
 A refusal answers `application/problem+json` as defined by RFC 9457, with a code per reason - `400`
 invalid input or unsupported type, `403` blacklisted, `429` rate limited, `503` breaker open, `502`
@@ -55,11 +56,11 @@ contract:
 | Behaviour | What the service does | Covered by |
 |---|---|---|
 | Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `allThreeChannelsAreDeliveredAndRecorded`; `unsupportedTypeIsStoredAsUnknown` |
-| Blacklist | a target containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
-| Rate limit | a target with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
-| Input | a blank or missing target is refused before anything is written, as is a type or target longer than its column, and a missing payload is stored as empty text | `missingTargetIsRejected`; `overlongTypeAndTargetAreRejected`; `missingPayloadIsStoredAsEmptyText` |
-| Unknown type | stored with status `U`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
-| Failures and breaker | a failed attempt is stored as `E` and counted, whatever its channel; at three consecutive failures the breaker opens and attempts are stored as `R`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt` |
+| Blacklist | a recipient containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
+| Rate limit | a recipient with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
+| Input | a blank or missing recipient is refused before anything is written, as is a type or recipient longer than its column, and a missing payload is stored as empty text | `missingTargetIsRejected`; `overlongTypeAndTargetAreRejected`; `missingPayloadIsStoredAsEmptyText` |
+| Unknown type | stored with status `UNKNOWN`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
+| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; at three consecutive failures the breaker opens and attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt` |
 | History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestIsEmptyBeforeAnythingIsSent` |
 
 ## Decisions and trade-offs
@@ -75,10 +76,10 @@ Each of these was a choice, not an omission, and each line names the alternative
 - **State is derived from the log, not kept beside it.** The rate limit and the breaker are computed
   from the same rows the audit writes, so one place knows the outcome of every attempt and there is
   nothing to keep in sync. In-process counters are cheaper now, and would have to be replaced the
-  moment the log outlives the process. Derivation is not free: the `failureCount` every response
-  carries is a window over the whole log, since the run a row belongs to can start arbitrarily far
-  back, and neither `LIMIT 20` nor `LIMIT 1` bounds it. The decisions do not pay that - the breaker
-  asks a scalar count that the `(status, id)` index answers without touching the table.
+  moment the log outlives the process. Both rules stay cheap: the breaker asks a scalar count the
+  `(status, id)` index answers without touching the table, and the rate limit counts one recipient's
+  attempts in the last minute. What a run has accumulated is not reported - that is the breaker's
+  input, not a property of a row, and per row it would be a window over the whole log on every read.
 - **Keys and clocks come from the database.** The identity sequence numbers the attempts and
   `current_timestamp` dates them, so two processes writing to the same log would agree on order and
   time. The JVM clock and `max(id) + 1` were cheaper to write and lost: they disagree the moment a
@@ -94,11 +95,14 @@ Each of these was a choice, not an omission, and each line names the alternative
   database later than the call, and a read can be answered from the session. This flow writes and then
   reads the same log within one request, so a delayed write means a stale read. Spring Data JDBC
   executes each statement immediately and removes only the mapping. SQL is kept where the model cannot
-  state the intent: the failure-count window read, which has no column, and the state update,
-  which writes only the columns that changed.
-- **The response keeps the legacy shape.** The letters, `blocked` and `dispatchCount` repeating the
-  id are what the old endpoint already printed, and the task asks to keep the behaviour that matters
-  while also saying the API may not be ideal. The oddities stay: no caller exists to check a rename.
+  state the intent: the two counts the safeguards ask for, and the state update, which writes only
+  the columns that changed.
+- **The response reports the log's own words, not the legacy encoding.** The old endpoint printed a
+  letter per status, `Y` or `N` for the blacklist flag, and the id a second time as `dispatchCount`.
+  None of the three is behaviour, and the task permits redesigning the API: the letters were a
+  translation the log never stored, and the flag could only ever read `N`, because a blacklisted
+  recipient is refused before a row is written. Keeping them was the alternative, and it would have
+  spent that permission on fidelity to a contract no caller in this repository consumes.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm

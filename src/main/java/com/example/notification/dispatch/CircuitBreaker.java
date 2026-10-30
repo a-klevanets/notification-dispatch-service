@@ -4,7 +4,10 @@ import org.springframework.stereotype.Component;
 
 import com.example.notification.persistence.NotificationRepository;
 
-/** Open at three failures in a row; only a successful send closes it, and nothing times out. */
+/**
+ * Once open it stays open: no timer, no half-open probe, and no success can reach the counter that
+ * would reset it.
+ */
 @Component
 public class CircuitBreaker {
 
@@ -15,6 +18,6 @@ public class CircuitBreaker {
   }
 
   public boolean isOpen() {
-    return repository.latestFailureCount() >= 3;
+    return repository.failuresSinceLastSuccess() >= 3;
   }
 }

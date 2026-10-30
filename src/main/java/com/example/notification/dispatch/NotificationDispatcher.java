@@ -43,11 +43,12 @@ public class NotificationDispatcher {
     String safePayload = payload != null ? payload : "";
 
     if (safeTarget == null || safeTarget.isEmpty()) {
-      throw new NotificationDispatchException(Reason.INVALID_REQUEST, "Target is mandatory.");
+      throw new NotificationDispatchException(Reason.INVALID_REQUEST, "Recipient is mandatory.");
     }
     if (safeTarget.length() > NotificationRepository.TARGET_LENGTH) {
       throw new NotificationDispatchException(
-          Reason.INVALID_REQUEST, "Target exceeds " + NotificationRepository.TARGET_LENGTH + " characters.");
+          Reason.INVALID_REQUEST,
+          "Recipient exceeds " + NotificationRepository.TARGET_LENGTH + " characters.");
     }
     if (safeType.length() > NotificationRepository.TYPE_LENGTH) {
       throw new NotificationDispatchException(
@@ -89,10 +90,10 @@ public class NotificationDispatcher {
   }
 
   public List<NotificationAttempt> getHistory() {
-    return repository.findHistory();
+    return repository.findTop20ByOrderByIdDesc();
   }
 
   public NotificationAttempt getLatestState() {
-    return repository.findLatest().orElse(null);
+    return repository.findTopByOrderByIdDesc().orElse(null);
   }
 }

@@ -10,35 +10,16 @@ import org.springframework.data.repository.Repository;
 import com.example.notification.persistence.NotificationAttempt.Status;
 
 /**
- * The attempt log. {@code Repository} rather than {@code CrudRepository}: a generated read selects every
- * mapped column, and {@code failureCount} has none. {@code save} is still implemented — Spring Data gives
- * every repository a {@code SimpleJdbcRepository} base class and matches it to the declared methods.
+ * The attempt log. {@code Repository} rather than {@code CrudRepository}: the interface declares
+ * the reads and writes the service uses, and nothing else. {@code save} has no body; Spring Data
+ * supplies it from {@code SimpleJdbcRepository} and matches it to the declared methods.
  */
 public interface NotificationRepository extends Repository<NotificationAttempt, Long> {
 
-  /** The type column's width; a longer value fails the write. */
+  /** The column widths from {@code schema.sql}; a longer value fails the write. */
   int TYPE_LENGTH = 32;
-
-  /** The target column's width; a longer value fails the write. */
   int TARGET_LENGTH = 255;
-
-  /** The message column's width; a longer text fails the write. */
   int MESSAGE_LENGTH = 255;
-
-  /** Every attempt with the failures its run has accumulated; a caller appends its own filter or order. */
-  String ATTEMPTS_WITH_FAILURE_COUNT =
-      """
-      WITH runs AS (
-        SELECT id, type, target, payload, status, message, created_at, updated_at,
-               MAX(CASE WHEN status = 'SENT' THEN id ELSE 0 END)
-                 OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run
-          FROM notification_attempt
-      )
-      SELECT id, type, target, payload, status, message, created_at, updated_at,
-             SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END)
-               OVER (PARTITION BY run ORDER BY id) AS failure_count
-        FROM runs
-      """;
 
   @Query(
       """
@@ -56,16 +37,13 @@ public interface NotificationRepository extends Repository<NotificationAttempt, 
       WHERE status = 'ERROR'
         AND id > COALESCE((SELECT MAX(id) FROM notification_attempt WHERE status = 'SENT'), 0)
       """)
-  int latestFailureCount();
+  int failuresSinceLastSuccess();
 
-  @Query(ATTEMPTS_WITH_FAILURE_COUNT + " WHERE id = :id")
   Optional<NotificationAttempt> findById(Long id);
 
-  @Query(ATTEMPTS_WITH_FAILURE_COUNT + " ORDER BY id DESC LIMIT 1")
-  Optional<NotificationAttempt> findLatest();
+  Optional<NotificationAttempt> findTopByOrderByIdDesc();
 
-  @Query(ATTEMPTS_WITH_FAILURE_COUNT + " ORDER BY id DESC LIMIT 20")
-  List<NotificationAttempt> findHistory();
+  List<NotificationAttempt> findTop20ByOrderByIdDesc();
 
   /** The raw write; {@link #setState} is the way in, it cuts the message to the column's width. */
   @Modifying
