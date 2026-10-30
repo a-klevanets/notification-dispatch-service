@@ -3,6 +3,7 @@ package com.example.notification.dispatch;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,12 @@ public class NotificationDispatcher {
   private final RateLimit rateLimit;
   private final CircuitBreaker breaker;
 
+  /** The rate limit counts rows other dispatches insert, so count and insert stay atomic. */
+  private static final int STRIPES = 1024;
+
+  private final Object[] admission =
+      IntStream.range(0, STRIPES).mapToObj(_ -> new Object()).toArray();
+
   public NotificationDispatcher(
       NotificationRepository repository,
       SenderRegistry senders,
@@ -41,7 +48,7 @@ public class NotificationDispatcher {
     this.breaker = breaker;
   }
 
-  public synchronized NotificationAttempt dispatch(String type, String target, String payload) {
+  public NotificationAttempt dispatch(String type, String target, String payload) {
 
     String safeType = type.trim().toUpperCase(Locale.ROOT);
     String safeTarget = target.trim();
@@ -49,11 +56,15 @@ public class NotificationDispatcher {
     if (blacklist.blocks(safeTarget)) {
       throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");
     }
-    if (rateLimit.exceeded(safeTarget)) {
-      throw new NotificationDispatchException(Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
-    }
 
-    long id = repository.open(safeType, safeTarget, payload);
+    long id;
+    synchronized (admission[stripeOf(safeTarget)]) {
+      if (rateLimit.exceeded(safeTarget)) {
+        throw new NotificationDispatchException(
+            Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
+      }
+      id = repository.open(safeType, safeTarget, payload);
+    }
 
     if (breaker.isOpen()) {
       repository.setState(id, Status.REJECTED, "Circuit breaker OPEN via database state.");
@@ -92,5 +103,10 @@ public class NotificationDispatcher {
       throw new NotificationDispatchException(Reason.NOT_FOUND, "No attempt " + id + ".");
     }
     return repository.findById(id).orElseThrow();
+  }
+
+  /** A modulus would read the low bits alone; the high word of the product uses the whole hash. */
+  private static int stripeOf(String target) {
+    return (int) ((Integer.toUnsignedLong(target.hashCode()) * STRIPES) >>> 32);
   }
 }
