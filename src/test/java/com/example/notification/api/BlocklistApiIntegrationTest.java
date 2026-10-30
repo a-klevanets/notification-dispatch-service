@@ -41,7 +41,7 @@ public class BlocklistApiIntegrationTest {
   }
 
   @Test
-  public void anEntryIsListedOnceItIsAdded() throws Exception {
+  public void entryIsListedOnceItIsAdded() throws Exception {
     block("buyer@example.com");
 
     list()
@@ -50,7 +50,7 @@ public class BlocklistApiIntegrationTest {
   }
 
   @Test
-  public void theSameAddressAddedTwiceIsListedOnce() throws Exception {
+  public void sameAddressAddedTwiceIsListedOnce() throws Exception {
     block("buyer@example.com");
     block("buyer@example.com");
 
@@ -58,7 +58,7 @@ public class BlocklistApiIntegrationTest {
   }
 
   @Test
-  public void theListAnswersInAddressOrder() throws Exception {
+  public void listAnswersInAddressOrder() throws Exception {
     block("c@example.com");
     block("a@example.com");
     block("b@example.com");
@@ -70,14 +70,14 @@ public class BlocklistApiIntegrationTest {
   }
 
   @Test
-  public void anEntryIsTrimmedBeforeItIsStored() throws Exception {
+  public void entryIsTrimmedBeforeItIsStored() throws Exception {
     block("  buyer@example.com  ");
 
     list().andExpect(jsonPath("$[0]").value("buyer@example.com"));
   }
 
   @Test
-  public void anEmptyEntryIsRefused() throws Exception {
+  public void blankEntryIsRefused() throws Exception {
     expectProblem(
         mockMvc.perform(post(BLOCKLIST).contentType(MediaType.APPLICATION_JSON).content("{}")),
         400,
@@ -90,7 +90,7 @@ public class BlocklistApiIntegrationTest {
 
   /** One over the column's width; the insert would fail, so the request is refused first. */
   @Test
-  public void anEntryWiderThanTheColumnIsRefused() throws Exception {
+  public void overlongEntryIsRefused() throws Exception {
     expectProblem(
         blockRaw("r".repeat(256)),
         400,
