@@ -20,7 +20,7 @@ import org.springframework.web.context.WebApplicationContext;
 /**
  * The contract, asserted where a caller meets it: the rules the service enforces, the status and
  * the RFC 9457 body each refusal answers with, the shape a stored attempt is reported in, and the
- * two read endpoints. Nothing is mocked - a real context over a real H2. MockMvc is wired from the
+ * read endpoint. Nothing is mocked - a real context over a real H2. MockMvc is wired from the
  * context here rather than by {@code @AutoConfigureMockMvc}, which Spring Boot 4 moved into a
  * {@code spring-boot-webmvc-test} module this build does not carry.
  */
@@ -29,7 +29,6 @@ import org.springframework.web.context.WebApplicationContext;
 public class NotificationApiIntegrationTest {
 
   private static final String NOTIFICATIONS = "/api/v1/notifications";
-  private static final String LATEST = NOTIFICATIONS + "/latest";
 
   @Autowired
   private WebApplicationContext context;
@@ -58,13 +57,13 @@ public class NotificationApiIntegrationTest {
         .andExpect(jsonPath("$.blocked").doesNotExist())
         .andExpect(jsonPath("$.failureCount").doesNotExist());
 
-    // Read back - the write path proves the mapper, not that the read endpoints use the same query.
-    latest()
+    // Read back - the write path proves the mapper, not that the read endpoint uses the same query.
+    history(1)
         .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.recipient").value("buyer@example.com"))
-        .andExpect(jsonPath("$.payload").value("hello"))
-        .andExpect(jsonPath("$.createdAt").exists())
-        .andExpect(jsonPath("$.updatedAt").exists());
+        .andExpect(jsonPath("$[0].recipient").value("buyer@example.com"))
+        .andExpect(jsonPath("$[0].payload").value("hello"))
+        .andExpect(jsonPath("$[0].createdAt").exists())
+        .andExpect(jsonPath("$[0].updatedAt").exists());
 
     history().andExpect(jsonPath("$.length()").value(1));
   }
@@ -90,10 +89,10 @@ public class NotificationApiIntegrationTest {
         "Unsupported notification type",
         "Unsupported type: FAX");
 
-    latest()
-        .andExpect(jsonPath("$.type").value("FAX"))
-        .andExpect(jsonPath("$.status").value("UNKNOWN"))
-        .andExpect(jsonPath("$.detail").value("Unsupported type: FAX"));
+    history(1)
+        .andExpect(jsonPath("$[0].type").value("FAX"))
+        .andExpect(jsonPath("$[0].status").value("UNKNOWN"))
+        .andExpect(jsonPath("$[0].detail").value("Unsupported type: FAX"));
   }
 
   @Test
@@ -102,9 +101,9 @@ public class NotificationApiIntegrationTest {
     send("EMAIL", "error-two@example.com").andExpect(status().isBadGateway());
     send("EMAIL", "error-three@example.com").andExpect(status().isBadGateway());
 
-    latest()
-        .andExpect(jsonPath("$.status").value("ERROR"))
-        .andExpect(jsonPath("$.detail").value("SMTP Timeout"));
+    history(1)
+        .andExpect(jsonPath("$[0].status").value("ERROR"))
+        .andExpect(jsonPath("$[0].detail").value("SMTP Timeout"));
 
     expectProblem(
         send("SMS", "ok-user@example.com"),
@@ -113,9 +112,9 @@ public class NotificationApiIntegrationTest {
         "Dispatch unavailable",
         "Circuit breaker OPEN via database state.");
 
-    latest()
-        .andExpect(jsonPath("$.id").value(4))
-        .andExpect(jsonPath("$.status").value("REJECTED"));
+    history(1)
+        .andExpect(jsonPath("$[0].id").value(4))
+        .andExpect(jsonPath("$[0].status").value("REJECTED"));
   }
 
   /** The breaker counts a run, not the total: a success between the failures keeps it closed. */
@@ -231,9 +230,9 @@ public class NotificationApiIntegrationTest {
         "Unsupported notification type",
         "Unsupported type: null");
 
-    latest()
-        .andExpect(jsonPath("$.status").value("UNKNOWN"))
-        .andExpect(jsonPath("$.detail").value("Unsupported type: "));
+    history(1)
+        .andExpect(jsonPath("$[0].status").value("UNKNOWN"))
+        .andExpect(jsonPath("$[0].detail").value("Unsupported type: "));
   }
 
   @Test
@@ -245,9 +244,9 @@ public class NotificationApiIntegrationTest {
         "Delivery failed",
         "SMTP Timeout");
 
-    latest()
-        .andExpect(jsonPath("$.status").value("ERROR"))
-        .andExpect(jsonPath("$.detail").value("SMTP Timeout"));
+    history(1)
+        .andExpect(jsonPath("$[0].status").value("ERROR"))
+        .andExpect(jsonPath("$[0].detail").value("SMTP Timeout"));
   }
 
   @Test
@@ -263,8 +262,31 @@ public class NotificationApiIntegrationTest {
   }
 
   @Test
-  public void latestIsEmptyBeforeAnythingIsSent() throws Exception {
-    latest().andExpect(content().string(""));
+  public void historyHonoursTheLimitTheCallerAsksFor() throws Exception {
+    for (int i = 0; i < 3; i++) {
+      send("SMS", "+700000000" + i).andExpect(status().isOk());
+    }
+
+    history(2)
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(jsonPath("$[0].recipient").value("+7000000002"))
+        .andExpect(jsonPath("$[1].recipient").value("+7000000001"));
+  }
+
+  @Test
+  public void limitOutsideTheAllowedRangeIsRefused() throws Exception {
+    expectProblem(
+        mockMvc.perform(get(NOTIFICATIONS).param("limit", "0")),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "limit must be between 1 and 100.");
+    expectProblem(
+        mockMvc.perform(get(NOTIFICATIONS).param("limit", "101")),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "limit must be between 1 and 100.");
   }
 
   private void expectProblem(
@@ -289,8 +311,11 @@ public class NotificationApiIntegrationTest {
         .andExpect(content().contentType(MediaType.APPLICATION_JSON));
   }
 
-  private ResultActions latest() throws Exception {
-    return mockMvc.perform(get(LATEST)).andExpect(status().isOk());
+  private ResultActions history(int limit) throws Exception {
+    return mockMvc
+        .perform(get(NOTIFICATIONS).param("limit", String.valueOf(limit)))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(MediaType.APPLICATION_JSON));
   }
 
   private ResultActions send(String type, String recipient) throws Exception {

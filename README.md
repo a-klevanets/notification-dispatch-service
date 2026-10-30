@@ -13,7 +13,7 @@ failures has tripped the breaker.
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
   `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
   attempt and its two timestamps stay the database's, the timestamps through column defaults
-- **Tests:** fifteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
+- **Tests:** sixteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
   through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
@@ -30,8 +30,12 @@ start begins empty.
 | Call | What comes back |
 |---|---|
 | `POST /api/v1/notifications` with `{"type", "recipient", "payload"}` | the stored attempt, `200` |
-| `GET /api/v1/notifications` | the twenty newest attempts, newest first |
-| `GET /api/v1/notifications/latest` | the newest attempt, or an empty body while nothing is stored |
+| `GET /api/v1/notifications?limit=N` | up to `N` of the newest attempts, newest first; `N` defaults to `20` and is refused outside `1..100` |
+
+There is no separate endpoint for the newest attempt or for the state of the service: the newest row
+is `?limit=1`, and what a run has accumulated shows on the next attempt, as a `503` and a `REJECTED`
+row, rather than as a number to read. A limit outside the range is refused rather than clamped, so a
+short answer always means the log ran out and never that the request was quietly cut down.
 
 An attempt is reported in the words the log stores: `status` is `NEW`, `SENT`, `ERROR`, `UNKNOWN` or
 `REJECTED`, `recipient` names who the notification went to, and `detail` carries the last thing
@@ -46,7 +50,8 @@ own code is the one place where the observable behaviour changed. The `type` is 
 `errors.example.com`, a reserved example domain used as an identifier because the service has no
 error documentation to link to. `NotificationApiIntegrationTest` asserts each of those six. Errors
 the framework raises before the dispatcher runs - an unreadable body, an unsupported media type, a
-wrong method, a path that does not exist - are rendered the same way.
+wrong method, a path that does not exist, a limit that is not a number - are rendered in the same
+media type, with the framework's own title and no slug.
 
 ## Behaviour that must be preserved
 
@@ -61,7 +66,7 @@ contract:
 | Input | a blank or missing recipient is refused before anything is written, as is a type or recipient longer than its column, and a missing payload is stored as empty text | `missingTargetIsRejected`; `overlongTypeAndTargetAreRejected`; `missingPayloadIsStoredAsEmptyText` |
 | Unknown type | stored with status `UNKNOWN`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
 | Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the failures since the last success, so a success resets it, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
-| History and latest | the history is the twenty newest attempts, newest first, and an empty log has no latest state | `historyIsCappedAtTheTwentyNewestAttempts`; `latestIsEmptyBeforeAnythingIsSent` |
+| History | the history is the twenty newest attempts, newest first, and a caller may ask for fewer; an empty log answers with an empty list | `historyIsCappedAtTheTwentyNewestAttempts`; `historyHonoursTheLimitTheCallerAsksFor`; `limitOutsideTheAllowedRangeIsRefused` |
 
 ## Decisions and trade-offs
 

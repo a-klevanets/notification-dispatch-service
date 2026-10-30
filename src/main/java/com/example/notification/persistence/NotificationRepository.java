@@ -3,6 +3,7 @@ package com.example.notification.persistence;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
@@ -41,9 +42,7 @@ public interface NotificationRepository extends Repository<NotificationAttempt, 
 
   Optional<NotificationAttempt> findById(Long id);
 
-  Optional<NotificationAttempt> findTopByOrderByIdDesc();
-
-  List<NotificationAttempt> findTop20ByOrderByIdDesc();
+  List<NotificationAttempt> findByOrderByIdDesc(Limit limit);
 
   /** The raw write; {@link #setState} is the way in, it cuts the message to the column's width. */
   @Modifying

@@ -6,14 +6,19 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.notification.NotificationDispatchException;
+import com.example.notification.NotificationDispatchException.Reason;
 import com.example.notification.dispatch.NotificationDispatcher;
-import com.example.notification.persistence.NotificationAttempt;
 
 @RestController
 @RequestMapping("/api/v1/notifications")
 public class NotificationController {
+
+  /** The largest page the log answers with; asking for more is refused, not clamped. */
+  private static final int MAX_LIMIT = 100;
 
   private final NotificationDispatcher dispatcher;
 
@@ -28,14 +33,11 @@ public class NotificationController {
   }
 
   @GetMapping
-  public List<NotificationResponse> history() {
-    return dispatcher.getHistory().stream().map(NotificationResponse::from).toList();
-  }
-
-  /** An empty log has no newest attempt; the answer is 200 with an empty body, not 404. */
-  @GetMapping("/latest")
-  public NotificationResponse latest() {
-    NotificationAttempt latest = dispatcher.getLatestState();
-    return latest == null ? null : NotificationResponse.from(latest);
+  public List<NotificationResponse> history(@RequestParam(defaultValue = "20") int limit) {
+    if (limit < 1 || limit > MAX_LIMIT) {
+      throw new NotificationDispatchException(
+          Reason.INVALID_REQUEST, "limit must be between 1 and " + MAX_LIMIT + ".");
+    }
+    return dispatcher.getHistory(limit).stream().map(NotificationResponse::from).toList();
   }
 }

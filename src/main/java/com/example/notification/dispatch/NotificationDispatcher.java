@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 
 import com.example.notification.NotificationDispatchException;
@@ -89,11 +90,7 @@ public class NotificationDispatcher {
     return repository.findById(id).orElseThrow();
   }
 
-  public List<NotificationAttempt> getHistory() {
-    return repository.findTop20ByOrderByIdDesc();
-  }
-
-  public NotificationAttempt getLatestState() {
-    return repository.findTopByOrderByIdDesc().orElse(null);
+  public List<NotificationAttempt> getHistory(int limit) {
+    return repository.findByOrderByIdDesc(Limit.of(limit));
   }
 }
