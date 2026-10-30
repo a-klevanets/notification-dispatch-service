@@ -2,6 +2,8 @@ package com.example.notification.api;
 
 import java.util.List;
 
+import jakarta.validation.Valid;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,7 +29,7 @@ public class NotificationController {
   }
 
   @PostMapping
-  public NotificationResponse send(@RequestBody NotificationRequest request) {
+  public NotificationResponse send(@Valid @RequestBody NotificationRequest request) {
     return NotificationResponse.from(
         dispatcher.dispatch(request.type(), request.recipient(), request.payload()));
   }

@@ -39,22 +39,8 @@ public class NotificationDispatcher {
 
   public synchronized NotificationAttempt dispatch(String type, String target, String payload) {
 
-    String safeType = type != null ? type.trim().toUpperCase(Locale.ROOT) : "";
-    String safeTarget = target != null ? target.trim() : null;
-    String safePayload = payload != null ? payload : "";
-
-    if (safeTarget == null || safeTarget.isEmpty()) {
-      throw new NotificationDispatchException(Reason.INVALID_REQUEST, "Recipient is mandatory.");
-    }
-    if (safeTarget.length() > NotificationRepository.TARGET_LENGTH) {
-      throw new NotificationDispatchException(
-          Reason.INVALID_REQUEST,
-          "Recipient exceeds " + NotificationRepository.TARGET_LENGTH + " characters.");
-    }
-    if (safeType.length() > NotificationRepository.TYPE_LENGTH) {
-      throw new NotificationDispatchException(
-          Reason.INVALID_REQUEST, "Type exceeds " + NotificationRepository.TYPE_LENGTH + " characters.");
-    }
+    String safeType = type.trim().toUpperCase(Locale.ROOT);
+    String safeTarget = target.trim();
 
     if (blacklist.blocks(safeTarget)) {
       throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");
@@ -63,7 +49,7 @@ public class NotificationDispatcher {
       throw new NotificationDispatchException(Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
     }
 
-    long id = repository.open(safeType, safeTarget, safePayload);
+    long id = repository.open(safeType, safeTarget, payload);
 
     if (breaker.isOpen()) {
       repository.setState(id, Status.REJECTED, "Circuit breaker OPEN via database state.");
@@ -74,11 +60,11 @@ public class NotificationDispatcher {
     if (channel.isEmpty()) {
       System.out.println("LOGGING TO DB: Unknown type attempted -> " + type);
       repository.setState(id, Status.UNKNOWN, "Unsupported type: " + safeType);
-      throw new NotificationDispatchException(Reason.UNSUPPORTED_TYPE, "Unsupported type: " + type);
+      throw new NotificationDispatchException(Reason.UNSUPPORTED_TYPE, "Unsupported type: " + safeType);
     }
 
     try {
-      senders.senderFor(channel.get()).send(safeTarget, safePayload);
+      senders.senderFor(channel.get()).send(safeTarget, payload);
     } catch (Exception e) {
       String detail = e.getMessage() != null ? e.getMessage() : e.toString();
       repository.setState(id, Status.ERROR, detail);

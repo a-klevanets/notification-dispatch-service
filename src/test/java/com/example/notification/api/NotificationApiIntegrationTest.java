@@ -211,28 +211,29 @@ public class NotificationApiIntegrationTest {
   }
 
   @Test
-  public void missingPayloadIsStoredAsEmptyText() throws Exception {
-    send("""
-        {"type": "PUSH", "recipient": "device-42"}""")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.status").value("SENT"))
-        .andExpect(jsonPath("$.payload").value(""));
+  public void missingPayloadIsRejected() throws Exception {
+    expectProblem(
+        send("""
+            {"type": "PUSH", "recipient": "device-42"}"""),
+        400,
+        "invalid-request",
+        "Invalid request",
+        "Payload is mandatory.");
+
+    expectNothingIsStored();
   }
 
-  /** The refusal quotes what arrived, the log stores the normalized value, so the two differ. */
   @Test
-  public void missingTypeIsStoredAsUnknown() throws Exception {
+  public void missingTypeIsRejected() throws Exception {
     expectProblem(
         send("""
             {"recipient": "ops@example.com", "payload": "hello"}"""),
         400,
-        "unsupported-type",
-        "Unsupported notification type",
-        "Unsupported type: null");
+        "invalid-request",
+        "Invalid request",
+        "Type is mandatory.");
 
-    history(1)
-        .andExpect(jsonPath("$[0].status").value("UNKNOWN"))
-        .andExpect(jsonPath("$[0].detail").value("Unsupported type: "));
+    expectNothingIsStored();
   }
 
   @Test

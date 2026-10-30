@@ -7,7 +7,8 @@ failures has tripped the breaker.
 
 ## Current stack
 
-- **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`
+- **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`; the
+  request is validated by Jakarta Bean Validation, from `spring-boot-starter-validation`
 - **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
   container (`bootJar`; the plain `jar` task is disabled)
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
@@ -63,8 +64,8 @@ contract:
 | Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `allThreeChannelsAreDeliveredAndRecorded`; `unsupportedTypeIsStoredAsUnknown` |
 | Blacklist | a recipient containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
 | Rate limit | a recipient with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
-| Input | a blank or missing recipient is refused before anything is written, as is a type or recipient longer than its column, and a missing payload is stored as empty text | `missingTargetIsRejected`; `overlongTypeAndTargetAreRejected`; `missingPayloadIsStoredAsEmptyText` |
-| Unknown type | stored with status `UNKNOWN`, then reported as an error; a missing type is one more unknown type | `unsupportedTypeIsStoredAsUnknown`; `missingTypeIsStoredAsUnknown` |
+| Input | a blank or missing recipient, type or payload is refused before anything is written, as is a type or recipient longer than its column | `missingTargetIsRejected`; `missingTypeIsRejected`; `missingPayloadIsRejected`; `overlongTypeAndTargetAreRejected` |
+| Unknown type | stored with status `UNKNOWN`, then reported as an error | `unsupportedTypeIsStoredAsUnknown` |
 | Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the failures since the last success, so a success resets it, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
 | History | the history is the twenty newest attempts, newest first, and a caller may ask for fewer; an empty log answers with an empty list | `historyIsCappedAtTheTwentyNewestAttempts`; `historyHonoursTheLimitTheCallerAsksFor`; `limitOutsideTheAllowedRangeIsRefused` |
 
@@ -108,6 +109,11 @@ Each of these was a choice, not an omission, and each line names the alternative
   translation the log never stored, and the flag could only ever read `N`, because a blacklisted
   recipient is refused before a row is written. Keeping them was the alternative, and it would have
   spent that permission on fidelity to a contract no caller in this repository consumes.
+- **The request declares its own rules.** `@NotBlank` and `@Size` sit on `NotificationRequest`, next
+  to the fields they bound, and one handler turns them into the same problem body a dispatch refusal
+  answers with. Explicit checks in the dispatcher were the alternative: they keep the order of the
+  refusals deterministic, which annotations give up - of two violations in one body, the one
+  reported is whichever Spring lists first.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm
