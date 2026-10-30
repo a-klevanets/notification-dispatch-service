@@ -30,6 +30,7 @@ import org.springframework.web.context.WebApplicationContext;
 public class NotificationApiIntegrationTest {
 
   private static final String NOTIFICATIONS = "/api/v1/notifications";
+  private static final String BLOCKLIST = "/api/v1/blocklist";
 
   @Autowired
   private WebApplicationContext context;
@@ -71,6 +72,8 @@ public class NotificationApiIntegrationTest {
 
   @Test
   public void blockedTargetFailsBeforeDispatchIsInserted() throws Exception {
+    block("blocked-user@example.com");
+
     expectProblem(
         send("SMS", "blocked-user@example.com"),
         403,
@@ -148,17 +151,23 @@ public class NotificationApiIntegrationTest {
     history().andExpect(jsonPath("$.length()").value(3));
   }
 
-  /** The guard matches a substring of the target, not a list, so this address is refused. */
+  /** The list holds addresses, so a name that merely contains the word is delivered. */
   @Test
-  public void targetWithBlockedInsideItsNameIsAlsoRefused() throws Exception {
-    expectProblem(
-        send("EMAIL", "unblocked@example.com"),
-        403,
-        "blacklisted",
-        "Recipient blacklisted",
-        "Recipient is blacklisted.");
+  public void nameContainingBlockedIsDelivered() throws Exception {
+    send("EMAIL", "unblocked@example.com").andExpect(status().isOk());
+  }
 
-    expectNothingIsStored();
+  @Test
+  public void removingAnEntryLetsTheRecipientThrough() throws Exception {
+    block("buyer@example.com");
+
+    mockMvc
+        .perform(delete(BLOCKLIST).param("recipient", "buyer@example.com"))
+        .andExpect(status().isNoContent());
+
+    send("EMAIL", "buyer@example.com").andExpect(status().isOk());
+
+    mockMvc.perform(get(BLOCKLIST)).andExpect(jsonPath("$.length()").value(0));
   }
 
   @Test
@@ -332,6 +341,15 @@ public class NotificationApiIntegrationTest {
         .andExpect(jsonPath("$.title").value(title))
         .andExpect(jsonPath("$.detail").value(detail))
         .andExpect(jsonPath("$.status").value(status));
+  }
+
+  private void block(String recipient) throws Exception {
+    mockMvc
+        .perform(
+            post(BLOCKLIST)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"recipient\": \"%s\"}".formatted(recipient)))
+        .andExpect(status().isCreated());
   }
 
   private void expectNothingIsStored() throws Exception {

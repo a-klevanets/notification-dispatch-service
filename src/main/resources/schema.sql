@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS notification_attempt;
+DROP TABLE IF EXISTS blocked_recipient;
 
 CREATE TABLE notification_attempt (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -23,3 +24,12 @@ COMMENT ON COLUMN notification_attempt.updated_at IS 'When the outcome was writt
 
 CREATE INDEX ix_notification_attempt_target ON notification_attempt (target, created_at);
 CREATE INDEX ix_notification_attempt_status ON notification_attempt (status, id);
+
+CREATE TABLE blocked_recipient (
+    recipient VARCHAR(255) PRIMARY KEY,
+    added_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE blocked_recipient IS 'The recipients the service refuses to dispatch to; membership is the whole rule';
+COMMENT ON COLUMN blocked_recipient.recipient IS 'The recipient as the request writes it, trimmed and matched exactly';
+COMMENT ON COLUMN blocked_recipient.added_at IS 'When the entry was written, by the database clock';

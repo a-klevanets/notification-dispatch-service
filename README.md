@@ -11,10 +11,11 @@ failures has tripped the breaker.
   request is validated by Jakarta Bean Validation, from `spring-boot-starter-validation`
 - **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
   container (`bootJar`; the plain `jar` task is disabled)
-- **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
-  `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
-  attempt and its two timestamps stay the database's, the timestamps through column defaults
-- **Tests:** seventeen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
+- **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, two tables - `notification_attempt`
+  for the log and `blocked_recipient` for what the service refuses; `schema.sql` drops and recreates
+  both on every startup. Spring Data owns the statements; the key of an attempt and its two timestamps
+  stay the database's, the timestamps through column defaults
+- **Tests:** eighteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
   through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
@@ -32,11 +33,18 @@ start begins empty.
 |---|---|
 | `POST /api/v1/notifications` with `{"type", "recipient", "payload"}` | the stored attempt, `200` |
 | `GET /api/v1/notifications?limit=N` | up to `N` of the newest attempts, newest first; `N` defaults to `20` and is refused outside `1..100` |
+| `GET /api/v1/blocklist` | the recipients the service refuses, one address per entry |
+| `POST /api/v1/blocklist` with `{"recipient"}` | adds an entry, `201`; adding the same address again changes nothing |
+| `DELETE /api/v1/blocklist?recipient=...` | removes the entry, `204`, whether or not the list held it |
 
 There is no separate endpoint for the newest attempt or for the state of the service: the newest row
 is `?limit=1`, and what a run has accumulated shows on the next attempt, as a `503` and a `REJECTED`
 row, rather than as a number to read. A limit outside the range is refused rather than clamped, so a
 short answer always means the log ran out and never that the request was quietly cut down.
+
+The blocklist is data, and an entry names one address exactly, matched once trimmed and without
+folding case. Membership is the whole rule, so a recipient whose name merely contains `blocked` is
+delivered to, and what is refused is what an operator put on the list.
 
 An attempt is reported in the words the log stores: `status` is `NEW`, `SENT`, `ERROR`, `UNKNOWN` or
 `REJECTED`, `recipient` names who the notification went to, and `detail` carries the last thing
@@ -63,7 +71,7 @@ contract:
 | Behaviour | What the service does | Covered by |
 |---|---|---|
 | Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `allThreeChannelsAreDeliveredAndRecorded`; `unsupportedTypeIsStoredAsUnknown` |
-| Blacklist | a recipient containing `blocked` is refused - a substring check, not a stored list | `blockedTargetFailsBeforeDispatchIsInserted`; `targetWithBlockedInsideItsNameIsAlsoRefused` |
+| Blacklist | a recipient on the stored blocklist is refused - a list of addresses, not a text pattern | `blockedTargetFailsBeforeDispatchIsInserted`; `nameContainingBlockedIsDelivered`; `removingAnEntryLetsTheRecipientThrough` |
 | Rate limit | a recipient with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
 | Input | a blank or missing recipient, type or payload is refused before anything is written, as is a type or recipient longer than its column | `missingTargetIsRejected`; `missingTypeIsRejected`; `missingPayloadIsRejected`; `overlongTypeAndTargetAreRejected` |
 | Unknown type | stored with status `UNKNOWN`, then reported as an error | `unsupportedTypeIsStoredAsUnknown` |
@@ -120,6 +128,12 @@ Each of these was a choice, not an omission, and each line names the alternative
   with no `type`, so the same endpoint answered in two shapes. A handler per case the routes can reach
   puts a slug on each. Naming the difference in this file, as it was before, was the alternative that
   lost: a documented divergence is still a divergence a caller has to handle.
+- **The blocklist is a table, not a string check.** The behaviour to preserve names a blacklist, and
+  the engine imitated one by refusing any target whose text contained `blocked`: that refuses
+  `unblocked@example.com` and lets a caller decide its own fate by what it calls itself. The list is
+  now a table the API manages, so the refusal matches what an operator put there. A configuration
+  file and pattern matching were the alternatives: the first cannot change without a restart, the
+  second is the substring rule again with more syntax.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm
