@@ -108,7 +108,10 @@ Each of these was a choice, not an omission, and each line names the alternative
   behaviour here is a sliding minute and a breaker that never closes - a limitation kept, not a design.
   Adopting them would mean configuring them back to these semantics and paying a dependency for a
   query and a comparison; both rules are a class holding a single comparison, so a library can take
-  their place when the rules change.
+  their place when the rules change. The lock that serializes admission per recipient is striped by
+  hand for the same reason: Guava's `Striped` gives the same guarantee and the same collisions
+  between different recipients, and it is not in the Boot BOM, so it would be the first dependency
+  with a version pinned by hand.
 - **JDBC rather than an ORM, and Spring Data JDBC rather than hand-written mapping.** An ORM introduces
   session state, dirty checking and deferred flushing without reducing code size: a write reaches the
   database later than the call, and a read can be answered from the session. This flow writes and then
