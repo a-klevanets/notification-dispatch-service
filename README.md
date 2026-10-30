@@ -13,7 +13,7 @@ failures has tripped the breaker.
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, one table `notification_attempt`;
   `schema.sql` drops and recreates it on every startup. Spring Data owns the statements; the key of an
   attempt and its two timestamps stay the database's, the timestamps through column defaults
-- **Tests:** thirteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
+- **Tests:** fourteen Jupiter tests in `NotificationApiIntegrationTest`, driving the whole service
   through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
