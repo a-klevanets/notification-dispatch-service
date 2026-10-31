@@ -9,6 +9,9 @@ failures has tripped the breaker.
 
 - **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`; the
   request is validated by Jakarta Bean Validation, from `spring-boot-starter-validation`
+- **Requests:** `spring.threads.virtual.enabled: true`, so Tomcat gives each request a virtual thread
+  instead of one of its own pool; the request spends most of its life blocked on JDBC, which is what
+  the switch buys
 - **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
   container (`bootJar`; the plain `jar` task is disabled)
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, two tables - `notification_attempt`
@@ -20,10 +23,11 @@ failures has tripped the breaker.
   service through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
 The framework and the boundaries around the dispatch logic are modernized; the flow itself is still
-one method, in `NotificationDispatcher`. The three safeguards answer from their own classes; the
-method keeps their order, the audit writes and the refusals. What changed is what that method hands
-back - the stored attempt rather than the response the API prints - and who delivers: a registry of
-senders keyed by notification type rather than a branch on the type string.
+one method, in `NotificationDispatcher`. The three safeguards answer from their own classes - a table
+for the blocklist, a Resilience4j window for the breaker, a Bucket4j bucket for the rate limit - and
+the method keeps their order, the audit writes and the refusals. What changed is what that method
+hands back - the stored attempt rather than the response the API prints - and who delivers: a
+registry of senders keyed by notification type rather than a branch on the type string.
 
 ## Endpoints
 
@@ -75,10 +79,10 @@ contract:
 |---|---|---|
 | Channels | `EMAIL`, `SMS` and `PUSH` are supported, anything else is rejected | `emailSuccessIsStoredAsSent`; `allThreeChannelsAreDeliveredAndRecorded`; `unsupportedTypeIsStoredAsUnknown` |
 | Blacklist | a recipient on the stored blocklist is refused - a list of addresses, not a text pattern | `blockedTargetFailsBeforeDispatchIsInserted`; `nameContainingBlockedIsDelivered`; `removingAnEntryLetsTheRecipientThrough` |
-| Rate limit | a recipient with three or more attempts in the last minute is refused | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
+| Rate limit | a recipient is refused once three tokens are gone from its minute bucket; after a burst of three the refusal clears in about twenty seconds, not when the oldest attempt ages out | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
 | Input | a blank or missing recipient, type or payload is refused before anything is written, as is a type or recipient longer than its column | `missingTargetIsRejected`; `missingTypeIsRejected`; `missingPayloadIsRejected`; `overlongTypeAndTargetAreRejected` |
 | Unknown type | stored with status `UNKNOWN`, then reported as an error | `unsupportedTypeIsStoredAsUnknown` |
-| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the failures since the last success, so a success resets it, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
+| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the three most recent calls this process made, so a success inside that window keeps it closed, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again within the process | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
 | History | the history is the twenty newest attempts, newest first, and a caller may ask for fewer; an empty log answers with an empty list | `historyIsCappedAtTheTwentyNewestAttempts`; `historyHonoursTheLimitTheCallerAsksFor`; `limitOutsideTheAllowedRangeIsRefused` |
 | Update | an update attaches a note to an attempt; what the attempt recorded - type, recipient, payload, status, detail - stays as it was written | `noteIsAttachedWithoutRewritingTheAttempt`; `updateLeavesTheRecordAsItWasWritten`; `updateOnUnknownAttemptIsRefused`; `blankNoteIsRefused` |
 
@@ -89,36 +93,38 @@ Each of these was a choice, not an omission, and each line names the alternative
 - **The database stays embedded, so the state lives per process.** A production deployment would run a
   real database in a container and keep the log across restarts; here H2 in memory makes a run
   reproducible and the tests independent of any environment. The price: the log is gone on shutdown,
-  and the rules computed from it go with it. A shared database would outlive the process and make
-  replicas possible: the keys come from a sequence, whose only price is gaps after a rolled-back
-  insert, and a second process would still need a lock around the breaker's check-then-write.
-- **State is derived from the log, not kept beside it.** The rate limit and the breaker are computed
-  from the same rows the audit writes, so one place knows the outcome of every attempt and there is
-  nothing to keep in sync. In-process counters are cheaper now, and would have to be replaced the
-  moment the log outlives the process. Both rules stay cheap: the breaker asks a scalar count the
-  `(status, id)` index answers without touching the table, and the rate limit counts one recipient's
-  attempts in the last minute. What a run has accumulated is not reported - that is the breaker's
-  input, not a property of a row, and per row it would be a window over the whole log on every read.
+  and the history a caller reads with it. A shared database would outlive the process and make the log
+  agree between replicas: the keys come from a sequence, whose only price is gaps after a rolled-back
+  insert. The two safeguards would still not agree, because their totals are no longer in the log at
+  all.
+- **State is kept beside the log, not derived from it.** The breaker and the limiter hold their own
+  totals in the process, so the rows say what happened and decide nothing that happens next. The
+  price: a restart clears both rules, a second instance counts its own attempts, and the bucket map
+  grows with every recipient seen and nothing evicts from it - all three of which deriving the state
+  from the rows gave for free. The gain: neither rule queries the table any more, and the two counts
+  and the two indexes that answered them went with the queries. What a run has accumulated is still
+  not reported; it is a guard's own state now, not a property of a row.
 - **Keys and clocks come from the database.** The identity sequence numbers the attempts and
   `current_timestamp` dates them, so two processes writing to the same log would agree on order and
   time. The JVM clock and `max(id) + 1` were cheaper to write and lost: they disagree the moment a
   second process appears.
-- **Safeguards written out rather than taken from a library.** Resilience4j and Bucket4j cover this
-  ground, but their breaker recovers on a timer and their limiter refreshes a fixed period, while the
-  behaviour here is a sliding minute and a breaker that never closes - a limitation kept, not a design.
-  Adopting them would mean configuring them back to these semantics and paying a dependency for a
-  query and a comparison; both rules are a class holding a single comparison, so a library can take
-  their place when the rules change. The lock that serializes admission per recipient is striped by
-  hand for the same reason: Guava's `Striped` gives the same guarantee and the same collisions
-  between different recipients, and it is not in the Boot BOM, so it would be the first dependency
-  with a version pinned by hand.
+- **Safeguards taken from libraries.** Resilience4j covers the breaker, Bucket4j the rate limit, each
+  configured back to the rule the hand-written classes had, as far as their own model reaches. The
+  breaker lands on it exactly: a count-based window of three calls at a 100% failure threshold, with
+  the half-open probe dated ten years out because the library recovers on a timer. The limiter does
+  not: a greedily refilled bucket returns its three tokens across the minute, so a refused recipient
+  retries in about twenty seconds where the sliding minute held it until the oldest attempt aged out.
+  Neither library is in the Boot BOM, so both versions are pinned by hand - the cost of admitting a
+  dependency at all. The lock that used to serialize admission per recipient went away by itself:
+  taking a token and answering is one compare-and-set, so there was no read-then-write left to
+  protect, and fifty concurrent attempts for one recipient admitted three and stored three rows.
 - **JDBC rather than an ORM, and Spring Data JDBC rather than hand-written mapping.** An ORM introduces
   session state, dirty checking and deferred flushing without reducing code size: a write reaches the
   database later than the call, and a read can be answered from the session. This flow writes and then
   reads the same log within one request, so a delayed write means a stale read. Spring Data JDBC
   executes each statement immediately and removes only the mapping. SQL is kept where the model cannot
-  state the intent: the two counts the safeguards ask for, and the state update, which writes only
-  the columns that changed.
+  state the intent: the two partial updates, which write only the columns that changed, and the row
+  count that says whether the attempt a note is meant for exists at all.
 - **The response reports the log's own words, not the legacy encoding.** The old endpoint printed a
   letter per status, `Y` or `N` for the blacklist flag, and the id a second time as `dispatchCount`.
   None of the three is behaviour, and the task permits redesigning the API: the letters were a
@@ -143,10 +149,11 @@ Each of these was a choice, not an omission, and each line names the alternative
   second is the substring rule again with more syntax.
 - **An update attaches a note; it does not rewrite the attempt.** The bonus item asks for an update
   endpoint, and a row is an audit record: an edited payload would claim a different message was sent,
-  and an edited status would move the breaker, which is the count of `ERROR` rows since the last
-  success. The one field an update may write is the note, which never took part in a delivery. Editing
-  the payload and resending as a new attempt were the alternatives: the first makes the log lie, the
-  second is a different operation and answers a different question.
+  and an edited status would claim an outcome the transport never returned. The breaker no longer
+  reads these rows, but the history a caller reads does. The one field an update may write is the
+  note, which never took part in a delivery. Editing the payload and resending as a new attempt were
+  the alternatives: the first makes the log lie, the second is a different operation and answers a
+  different question.
 - **No idempotency.** A repeated request is a second notification: the assigned behaviour has no
   request key, and inventing one would change the contract rather than improve it.
 - **No retries.** Without an idempotent key and a schedule, a retry is a duplicate message or a storm
