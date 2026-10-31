@@ -25,7 +25,6 @@ COMMENT ON COLUMN notification_attempt.created_at IS 'When the attempt was writt
 COMMENT ON COLUMN notification_attempt.updated_at IS 'When the row was last written, by the database clock, unless the writer set it';
 
 CREATE INDEX ix_notification_attempt_target ON notification_attempt (target, created_at);
-CREATE INDEX ix_notification_attempt_status ON notification_attempt (status, id);
 
 CREATE TABLE blocked_recipient (
     recipient VARCHAR(255) PRIMARY KEY,

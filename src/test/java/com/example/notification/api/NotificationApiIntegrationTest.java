@@ -115,7 +115,7 @@ public class NotificationApiIntegrationTest {
         503,
         "circuit-breaker-open",
         "Dispatch unavailable",
-        "Circuit breaker OPEN via database state.");
+        "Circuit breaker OPEN.");
 
     history(1)
         .andExpect(jsonPath("$[0].id").value(4))

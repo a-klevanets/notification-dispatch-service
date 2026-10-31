@@ -67,8 +67,8 @@ public class NotificationDispatcher {
     }
 
     if (breaker.isOpen()) {
-      repository.setState(id, Status.REJECTED, "Circuit breaker OPEN via database state.");
-      throw new NotificationDispatchException(Reason.CIRCUIT_BREAKER_OPEN, "Circuit breaker OPEN via database state.");
+      repository.setState(id, Status.REJECTED, "Circuit breaker OPEN.");
+      throw new NotificationDispatchException(Reason.CIRCUIT_BREAKER_OPEN, "Circuit breaker OPEN.");
     }
 
     Optional<NotificationType> channel = NotificationType.parse(safeType);
@@ -80,12 +80,14 @@ public class NotificationDispatcher {
     try {
       senders.senderFor(channel.get()).send(safeTarget, payload);
     } catch (Exception e) {
+      breaker.recordFailure(e);
       String detail = e.getMessage() != null ? e.getMessage() : e.toString();
       repository.setState(id, Status.ERROR, detail);
       log.warn("Delivery failed for {}: {}", safeTarget, detail);
       throw new NotificationDispatchException(Reason.DELIVERY_FAILED, detail, e);
     }
 
+    breaker.recordSuccess();
     repository.setState(id, Status.SENT, "SENT");
     return repository.findById(id).orElseThrow();
   }

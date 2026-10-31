@@ -20,12 +20,15 @@ repositories {
 }
 
 dependencies {
-    // One place to bump: every version below is pinned by the Boot BOM.
+    // One place to bump: everything the Boot BOM manages.
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // Not in the BOM, so the version is pinned by hand: the cost the mainline rejects.
+    implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.4.0'
 
     runtimeOnly 'com.h2database:h2'
 

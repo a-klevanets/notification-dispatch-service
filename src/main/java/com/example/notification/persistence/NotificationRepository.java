@@ -32,15 +32,6 @@ public interface NotificationRepository extends Repository<NotificationAttempt, 
       """)
   int countRecentByTarget(String target);
 
-  @Query(
-      """
-      SELECT COUNT(*)
-      FROM notification_attempt
-      WHERE status = 'ERROR'
-        AND id > COALESCE((SELECT MAX(id) FROM notification_attempt WHERE status = 'SENT'), 0)
-      """)
-  int failuresSinceLastSuccess();
-
   Optional<NotificationAttempt> findById(Long id);
 
   List<NotificationAttempt> findByOrderByIdDesc(Limit limit);
