@@ -3,7 +3,6 @@ package com.example.notification.dispatch;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,12 +28,6 @@ public class NotificationDispatcher {
   private final RateLimit rateLimit;
   private final CircuitBreaker breaker;
 
-  /** The rate limit counts rows other dispatches insert, so count and insert stay atomic. */
-  private static final int STRIPES = 1024;
-
-  private final Object[] admission =
-      IntStream.range(0, STRIPES).mapToObj(_ -> new Object()).toArray();
-
   public NotificationDispatcher(
       NotificationRepository repository,
       SenderRegistry senders,
@@ -57,14 +50,11 @@ public class NotificationDispatcher {
       throw new NotificationDispatchException(Reason.BLACKLISTED, "Recipient is blacklisted.");
     }
 
-    long id;
-    synchronized (admission[stripeOf(safeTarget)]) {
-      if (rateLimit.exceeded(safeTarget)) {
-        throw new NotificationDispatchException(
-            Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
-      }
-      id = repository.open(safeType, safeTarget, payload);
+    if (rateLimit.exceeded(safeTarget)) {
+      throw new NotificationDispatchException(
+          Reason.RATE_LIMITED, "Recipient exceeded the rate limit.");
     }
+    long id = repository.open(safeType, safeTarget, payload);
 
     if (breaker.isOpen()) {
       repository.setState(id, Status.REJECTED, "Circuit breaker OPEN.");
@@ -105,10 +95,5 @@ public class NotificationDispatcher {
       throw new NotificationDispatchException(Reason.NOT_FOUND, "No attempt " + id + ".");
     }
     return repository.findById(id).orElseThrow();
-  }
-
-  /** A modulus would read the low bits alone; the high word of the product uses the whole hash. */
-  private static int stripeOf(String target) {
-    return (int) ((Integer.toUnsignedLong(target.hashCode()) * STRIPES) >>> 32);
   }
 }

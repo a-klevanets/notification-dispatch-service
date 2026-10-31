@@ -23,15 +23,6 @@ public interface NotificationRepository extends Repository<NotificationAttempt, 
   int MESSAGE_LENGTH = 255;
   int NOTE_LENGTH = 255;
 
-  @Query(
-      """
-      SELECT COUNT(*)
-      FROM notification_attempt
-      WHERE target = :target
-        AND created_at >= CURRENT_TIMESTAMP - INTERVAL '1' MINUTE
-      """)
-  int countRecentByTarget(String target);
-
   Optional<NotificationAttempt> findById(Long id);
 
   List<NotificationAttempt> findByOrderByIdDesc(Limit limit);

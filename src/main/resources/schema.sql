@@ -13,7 +13,7 @@ CREATE TABLE notification_attempt (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-COMMENT ON TABLE notification_attempt IS 'One row per dispatch attempt; the state of the service is a query over these rows';
+COMMENT ON TABLE notification_attempt IS 'One row per dispatch attempt; the guards keep their state in the process, so these rows are a log, not the state';
 COMMENT ON COLUMN notification_attempt.id IS 'Identity, and the ordinal number of the attempt';
 COMMENT ON COLUMN notification_attempt.type IS 'EMAIL, SMS, PUSH or whatever arrived';
 COMMENT ON COLUMN notification_attempt.target IS 'Recipient: an address, a phone number or a device id';
@@ -23,8 +23,6 @@ COMMENT ON COLUMN notification_attempt.message IS 'The last thing said about the
 COMMENT ON COLUMN notification_attempt.note IS 'What an update attached afterwards; never part of the delivery, so it may change';
 COMMENT ON COLUMN notification_attempt.created_at IS 'When the attempt was written, by the database clock, unless the writer set it';
 COMMENT ON COLUMN notification_attempt.updated_at IS 'When the row was last written, by the database clock, unless the writer set it';
-
-CREATE INDEX ix_notification_attempt_target ON notification_attempt (target, created_at);
 
 CREATE TABLE blocked_recipient (
     recipient VARCHAR(255) PRIMARY KEY,
