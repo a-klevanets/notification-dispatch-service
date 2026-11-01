@@ -5,33 +5,37 @@ import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Component;
 
-import io.github.resilience4j.circuitbreaker.CircuitBreaker.State;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig.SlidingWindowType;
 
 /**
- * Once open it stays open for the life of the process: the library recovers on a timer, so the probe
- * is dated ten years out. The window is the last three calls this process made.
+ * The window is the last three calls this process made; three failures hold the path for five seconds,
+ * then one call is let through to test the transport: it closes the breaker if it delivers and reopens
+ * it for another five if it does not.
  */
 @Component
 public class CircuitBreaker {
 
-  private static final int FAILURES = 3;
-  private static final Duration NOT_ANYTIME_SOON = Duration.ofDays(3650);
+  private static final int CALLS = 3;
+  private static final int PROBE_CALLS = 1;
+  private static final Duration OPEN_FOR = Duration.ofSeconds(5);
 
   private final io.github.resilience4j.circuitbreaker.CircuitBreaker breaker =
       io.github.resilience4j.circuitbreaker.CircuitBreaker.of(
           "dispatch",
           CircuitBreakerConfig.custom()
               .slidingWindowType(SlidingWindowType.COUNT_BASED)
-              .slidingWindowSize(FAILURES)
-              .minimumNumberOfCalls(FAILURES)
+              .slidingWindowSize(CALLS)
+              .minimumNumberOfCalls(CALLS)
               .failureRateThreshold(100)
-              .waitDurationInOpenState(NOT_ANYTIME_SOON)
+              .waitDurationInOpenState(OPEN_FOR)
+              .permittedNumberOfCallsInHalfOpenState(PROBE_CALLS)
               .build());
 
-  public boolean isOpen() {
-    return breaker.getState() == State.OPEN;
+  /** Asking is how the breaker is read: it half-opens on the ask, never on a state read, and the
+   * answer spends the probe's one place. */
+  public boolean admitsCall() {
+    return breaker.tryAcquirePermission();
   }
 
   /** The library keeps no log, so every outcome is handed in; no duration is configured to matter. */

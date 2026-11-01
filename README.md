@@ -18,7 +18,7 @@ failures has tripped the breaker.
   for the log and `blocked_recipient` for what the service refuses; `schema.sql` drops and recreates
   both on every startup. Spring Data owns the statements; the key of an attempt and its two timestamps
   stay the database's, the timestamps through column defaults
-- **Tests:** thirty Jupiter tests over two suites, `NotificationApiIntegrationTest` for the
+- **Tests:** thirty-two Jupiter tests over two suites, `NotificationApiIntegrationTest` for the
   dispatch rules and `BlocklistApiIntegrationTest` for the list's own contract, both driving the whole
   service through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
 
@@ -82,7 +82,7 @@ contract:
 | Rate limit | a recipient is refused once three tokens are gone from its minute bucket; after a burst of three the refusal clears in about twenty seconds, not when the oldest attempt ages out | `rateLimitedTargetIsRefusedAfterThreeAttempts` |
 | Input | a blank or missing recipient, type or payload is refused before anything is written, as is a type or recipient longer than its column | `missingTargetIsRejected`; `missingTypeIsRejected`; `missingPayloadIsRejected`; `overlongTypeAndTargetAreRejected` |
 | Unknown type | stored with status `UNKNOWN`, then reported as an error | `unsupportedTypeIsStoredAsUnknown` |
-| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the three most recent calls this process made, so a success inside that window keeps it closed, and at three the breaker opens, attempts are stored as `REJECTED`, and nothing closes it again within the process | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed` |
+| Failures and breaker | a failed attempt is stored as `ERROR` and counted, whatever its channel; the count is the three most recent calls this process made, so a success inside that window keeps it closed, and at three the breaker opens and attempts are stored as `REJECTED`; a probe five seconds later closes it if it delivers and reopens it if not | `channelFailureIsStoredAsAnError`; `threeFailuresOpenCircuitBreakerForNextAttempt`; `aSuccessBetweenFailuresKeepsTheBreakerClosed`; `anOpenBreakerClosesAfterASuccessfulProbe`; `aFailedProbeOpensTheBreakerAgain` |
 | History | the history is the twenty newest attempts, newest first, and a caller may ask for fewer; an empty log answers with an empty list | `historyIsCappedAtTheTwentyNewestAttempts`; `historyHonoursTheLimitTheCallerAsksFor`; `limitOutsideTheAllowedRangeIsRefused` |
 | Update | an update attaches a note to an attempt; what the attempt recorded - type, recipient, payload, status, detail - stays as it was written | `noteIsAttachedWithoutRewritingTheAttempt`; `updateLeavesTheRecordAsItWasWritten`; `updateOnUnknownAttemptIsRefused`; `blankNoteIsRefused` |
 
@@ -109,14 +109,14 @@ Each of these was a choice, not an omission, and each line names the alternative
   second process appears.
 - **Safeguards taken from libraries.** Resilience4j covers the breaker, Bucket4j the rate limit, each
   configured back to the rule the hand-written classes had, as far as their own model reaches. The
-  breaker lands on it exactly: a count-based window of three calls at a 100% failure threshold, with
-  the half-open probe dated ten years out because the library recovers on a timer. The limiter does
-  not: a greedily refilled bucket returns its three tokens across the minute, so a refused recipient
-  retries in about twenty seconds where the sliding minute held it until the oldest attempt aged out.
-  Neither library is in the Boot BOM, so both versions are pinned by hand - the cost of admitting a
-  dependency at all. The lock that used to serialize admission per recipient went away by itself:
-  taking a token and answering is one compare-and-set, so there was no read-then-write left to
-  protect, and fifty concurrent attempts for one recipient admitted three and stored three rows.
+  breaker's window lands on it exactly - three calls at a 100% failure threshold - its recovery does
+  not: five seconds, then one call probes the transport. The limiter does not either: a greedily
+  refilled bucket returns its three tokens across the minute, so a refused recipient retries in about
+  twenty seconds where the sliding minute held it until the oldest attempt aged out. Neither library is
+  in the Boot BOM, so both versions are pinned by hand - the cost of admitting a dependency at all. The
+  lock that used to serialize admission per recipient went away by itself: taking a token and
+  answering is one compare-and-set, so there was no read-then-write left to protect, and fifty
+  concurrent attempts for one recipient admitted three and stored three rows.
 - **JDBC rather than an ORM, and Spring Data JDBC rather than hand-written mapping.** An ORM introduces
   session state, dirty checking and deferred flushing without reducing code size: a write reaches the
   database later than the call, and a read can be answered from the session. This flow writes and then

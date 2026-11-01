@@ -56,15 +56,17 @@ public class NotificationDispatcher {
     }
     long id = repository.open(safeType, safeTarget, payload);
 
-    if (breaker.isOpen()) {
-      repository.setState(id, Status.REJECTED, "Circuit breaker OPEN.");
-      throw new NotificationDispatchException(Reason.CIRCUIT_BREAKER_OPEN, "Circuit breaker OPEN.");
-    }
-
     Optional<NotificationType> channel = NotificationType.parse(safeType);
     if (channel.isEmpty()) {
       repository.setState(id, Status.UNKNOWN, "Unsupported type: " + safeType);
       throw new NotificationDispatchException(Reason.UNSUPPORTED_TYPE, "Unsupported type: " + safeType);
+    }
+
+    // Asked last, so an admitted call always reaches the send and answers the breaker for it: a
+    // refusal after the answer would spend the probe's place on a call that never went out.
+    if (!breaker.admitsCall()) {
+      repository.setState(id, Status.REJECTED, "Circuit breaker OPEN.");
+      throw new NotificationDispatchException(Reason.CIRCUIT_BREAKER_OPEN, "Circuit breaker OPEN.");
     }
 
     try {

@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -133,6 +135,40 @@ public class NotificationApiIntegrationTest {
     send("EMAIL", "error-four@example.com").andExpect(status().isBadGateway());
 
     send("SMS", "+70000000000").andExpect(status().isOk());
+  }
+
+  @Test
+  public void anOpenBreakerClosesAfterASuccessfulProbe() throws Exception {
+    tripTheBreaker();
+
+    Thread.sleep(Duration.ofSeconds(6));
+
+    send("SMS", "ok-user@example.com")
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("SENT"));
+    // Passes only because the breaker closed: the probe spent the half-open window's one place.
+    send("EMAIL", "buyer@example.com").andExpect(status().isOk());
+  }
+
+  @Test
+  public void aFailedProbeOpensTheBreakerAgain() throws Exception {
+    tripTheBreaker();
+
+    Thread.sleep(Duration.ofSeconds(6));
+
+    expectProblem(
+        send("EMAIL", "error-user@example.com"),
+        502,
+        "delivery-failed",
+        "Delivery failed",
+        "SMTP Timeout");
+
+    expectProblem(
+        send("SMS", "ok-user@example.com"),
+        503,
+        "circuit-breaker-open",
+        "Dispatch unavailable",
+        "Circuit breaker OPEN.");
   }
 
   @Test
@@ -389,6 +425,19 @@ public class NotificationApiIntegrationTest {
         "invalid-request",
         "Invalid request",
         "limit must be a number.");
+  }
+
+  private void tripTheBreaker() throws Exception {
+    send("EMAIL", "error-one@example.com").andExpect(status().isBadGateway());
+    send("EMAIL", "error-two@example.com").andExpect(status().isBadGateway());
+    send("EMAIL", "error-three@example.com").andExpect(status().isBadGateway());
+
+    expectProblem(
+        send("SMS", "ok-user@example.com"),
+        503,
+        "circuit-breaker-open",
+        "Dispatch unavailable",
+        "Circuit breaker OPEN.");
   }
 
   private void expectProblem(
