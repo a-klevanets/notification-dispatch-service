@@ -1,10 +1,11 @@
 package com.example.notification.dispatch;
 
 import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Component;
+
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
@@ -19,12 +20,13 @@ public class RateLimit {
   private static final int PER_MINUTE = 3;
   private static final Duration MINUTE = Duration.ofMinutes(1);
 
-  /** One bucket per target for the life of the process; no entry is ever evicted. */
-  private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+  /** A bucket untouched for a minute has refilled itself, so it is dropped rather than kept. */
+  private final LoadingCache<String, Bucket> buckets =
+      Caffeine.newBuilder().expireAfterAccess(MINUTE).build(_ -> newBucket());
 
   /** Takes the token it answers about, so a refusal is a decision and not a read. */
   public boolean exceeded(String target) {
-    return !buckets.computeIfAbsent(target, _ -> newBucket()).tryConsume(1);
+    return !buckets.get(target).tryConsume(1);
   }
 
   private static Bucket newBucket() {

@@ -99,11 +99,10 @@ Each of these was a choice, not an omission, and each line names the alternative
   all.
 - **State is kept beside the log, not derived from it.** The breaker and the limiter hold their own
   totals in the process, so the rows say what happened and decide nothing that happens next. The
-  price: a restart clears both rules, a second instance counts its own attempts, and the bucket map
-  grows with every recipient seen and nothing evicts from it - all three of which deriving the state
-  from the rows gave for free. The gain: neither rule queries the table any more, and the two counts
-  and the two indexes that answered them went with the queries. What a run has accumulated is still
-  not reported; it is a guard's own state now, not a property of a row.
+  price: a restart clears both rules and a second instance counts its own attempts, both of which
+  deriving the state from the rows gave for free. The gain: neither rule queries the table any more,
+  and the two counts and the two indexes that answered them went with the queries. What a run has
+  accumulated is still not reported; it is a guard's own state now, not a property of a row.
 - **Keys and clocks come from the database.** The identity sequence numbers the attempts and
   `current_timestamp` dates them, so two processes writing to the same log would agree on order and
   time. The JVM clock and `max(id) + 1` were cheaper to write and lost: they disagree the moment a
