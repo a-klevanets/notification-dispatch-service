@@ -46,9 +46,10 @@ accumulated answers on the next request instead: a rate-limited recipient is ref
 written, an open breaker is refused after its row is stored as `REJECTED`. A short history means the
 log ran out and never that the request was quietly cut down.
 
-An attempt is reported in the words the log stores: `status` is `NEW`, `SENT`, `ERROR`, `UNKNOWN` or
-`REJECTED`, and `detail` carries the last thing said about it - `START` while it runs, the delivery
-error, or `SENT`. `note` is null until an update attaches one.
+An attempt is reported in the words the log stores. `status` is `SENT`, `ERROR`, `UNKNOWN` or
+`REJECTED`, and `NEW` is what the row holds until the outcome overwrites it, so a dispatch answer
+never carries it. `detail` is the last thing said about the attempt - the refusal, the transport
+error or `SENT`. `note` is null until an update attaches one.
 
 A refusal answers `application/problem+json` as defined by RFC 9457, with a code per reason - `400`
 invalid input or unsupported type, `404` no such attempt, `403` blacklisted, `429` rate limited, `503`

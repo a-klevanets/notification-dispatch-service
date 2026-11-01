@@ -4,11 +4,6 @@ import java.sql.Timestamp;
 
 import com.example.notification.persistence.NotificationAttempt;
 
-/**
- * The wire shape of one attempt: the log's own words, with nothing encoded at the boundary.
- * {@code detail} is the last thing said about the attempt - {@code START} while it runs, the
- * delivery error, or {@code SENT}.
- */
 public record NotificationResponse(
     long id,
     String type,
