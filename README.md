@@ -14,9 +14,9 @@ minute of rate limit, an unknown notification type, and any dispatch while the b
 - **Language and build:** Java 25 toolchain, Gradle 9.8.2 wrapper, executable jar with an embedded
   container (`bootJar`; the plain `jar` task is disabled)
 - **Persistence:** `spring-boot-starter-data-jdbc` over in-memory H2, two tables - `notification_attempt`
-  for the log and `blocked_recipient` for what the service refuses; `schema.sql` drops and recreates both
-  on every startup. Spring Data owns the statements; the key of an attempt and its two timestamps stay
-  the database's
+  for the log and `blocked_recipient` for what the service refuses; `schema.sql` creates a table on
+  startup only when it is missing. Spring Data owns the statements; the key of an attempt and its two
+  timestamps stay the database's
 - **Tests:** thirty-two Jupiter tests over two suites, `NotificationApiIntegrationTest` for the
   dispatch rules and `BlocklistApiIntegrationTest` for the list's own contract, both driving the whole
   service through MockMvc under `@SpringBootTest` against a real H2 with nothing mocked
@@ -97,8 +97,6 @@ Each of these was a choice, not an omission, and each line says what it bought a
   failover: the next instance takes over the same log, and no two of them write it together.
 - **The database is embedded for convenience.** H2 in memory keeps a run reproducible and the tests
   free of any environment; the price is that the log and the history a caller reads die on shutdown.
-  Neither the breaker nor the limiter reads the table, so a durable database is a configuration change:
-  the datasource url and the `DROP TABLE` that opens `schema.sql` are what stands in the way.
 - **Keys and clocks come from the database.** The engine asked the table for the highest id and
   added one in Java, so two requests in one process could be handed the same number, and it dated
   rows by its own clock, which a failover would disagree with. The identity column now numbers an

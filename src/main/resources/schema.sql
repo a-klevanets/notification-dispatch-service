@@ -1,7 +1,4 @@
-DROP TABLE IF EXISTS notification_attempt;
-DROP TABLE IF EXISTS blocked_recipient;
-
-CREATE TABLE notification_attempt (
+CREATE TABLE IF NOT EXISTS notification_attempt (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     type VARCHAR(32) NOT NULL,
     target VARCHAR(255) NOT NULL,
@@ -24,7 +21,7 @@ COMMENT ON COLUMN notification_attempt.note IS 'What an update attached afterwar
 COMMENT ON COLUMN notification_attempt.created_at IS 'When the attempt was written, by the database clock, unless the writer set it';
 COMMENT ON COLUMN notification_attempt.updated_at IS 'When the row was last written, by the database clock, unless the writer set it';
 
-CREATE TABLE blocked_recipient (
+CREATE TABLE IF NOT EXISTS blocked_recipient (
     recipient VARCHAR(255) PRIMARY KEY,
     added_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
