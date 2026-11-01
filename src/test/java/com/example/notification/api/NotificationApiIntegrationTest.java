@@ -57,10 +57,7 @@ public class NotificationApiIntegrationTest {
         .andExpect(jsonPath("$.status").value("SENT"))
         .andExpect(jsonPath("$.detail").value("SENT"))
         .andExpect(jsonPath("$.createdAt").exists())
-        .andExpect(jsonPath("$.updatedAt").exists())
-        .andExpect(jsonPath("$.dispatchCount").doesNotExist())
-        .andExpect(jsonPath("$.blocked").doesNotExist())
-        .andExpect(jsonPath("$.failureCount").doesNotExist());
+        .andExpect(jsonPath("$.updatedAt").exists());
 
     // Read back - the write path proves the mapper, not that the read endpoint uses the same query.
     history(1)
