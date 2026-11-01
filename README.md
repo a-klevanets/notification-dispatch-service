@@ -90,13 +90,10 @@ contract:
 
 Each of these was a choice, not an omission, and each line names the alternative that lost.
 
-- **The database stays embedded, so the state lives per process.** A production deployment would run a
-  real database in a container and keep the log across restarts; here H2 in memory makes a run
-  reproducible and the tests independent of any environment. The price: the log is gone on shutdown,
-  and the history a caller reads with it. A shared database would outlive the process and make the log
-  agree between replicas: the keys come from a sequence, whose only price is gaps after a rolled-back
-  insert. The two safeguards would still not agree, because their totals are no longer in the log at
-  all.
+- **The database is embedded for convenience.** H2 in memory keeps a run reproducible and the tests
+  free of any environment; the price is that the log and the history a caller reads die on shutdown.
+  Neither the breaker nor the limiter reads the table, so a durable database is a configuration change:
+  the datasource url and the `DROP TABLE` that opens `schema.sql` are what stands in the way.
 - **State is kept beside the log, not derived from it.** The breaker and the limiter hold their own
   totals in the process, so the rows say what happened and decide nothing that happens next. The
   price: a restart clears both rules and a second instance counts its own attempts, both of which
