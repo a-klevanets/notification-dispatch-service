@@ -70,6 +70,20 @@ unreadable body or a limit that is not a number as `invalid-request`, an unsuppo
 `unsupported-media-type` (`415`), a wrong method as `method-not-allowed` (`405`), and an unknown path
 as `not-found` (`404`). `frameworkRefusalsAreReportedInTheSameContract` asserts those five.
 
+## How changes are documented
+
+Each step changes one thing and records in its commit message what was decided and what was
+rejected. Notes about work that has not been done yet stay out of the repository on purpose: this
+file describes the service as it is, not as it is planned. Local working notes and tool state are
+not tracked at all.
+
+Two points of the history are worth checking out, each linked to the code as it stood in that commit:
+
+- [docs(readme): correct the test count the length guard left stale](https://github.com/a-klevanets/notification-dispatch-service/tree/d6ad75139a4d0b0ee02f5884371d5eab5a68fea1) - the
+  last commit where the original response shape was still the contract
+- [build(config): enable virtual threads](https://github.com/a-klevanets/notification-dispatch-service/tree/88070a4ccd2b4fbf4f838ffd385551778e0713d8) - the last commit before the
+  safeguards were taken from libraries
+
 ## Behaviour that must be preserved
 
 Whatever else changes, this is what the service has to keep doing. The named tests are the
@@ -156,16 +170,10 @@ Each of these was a choice, not an omission, and each line names the alternative
   against a failing transport; the task asks for neither, and the failure is already recorded and
   counts toward the breaker.
 
-## How changes are documented
-
-Each step changes one thing and records in its commit message what was decided and what was
-rejected. Notes about work that has not been done yet stay out of the repository on purpose: this
-file describes the service as it is, not as it is planned. Local working notes and tool state are
-not tracked at all.
-
 ## Provenance
 
 The repository was seeded from the task template, and the task statement is kept here as
-[ASSIGNMENT.md](ASSIGNMENT.md). Its list of behaviour to preserve is what the section above
-restates in the project's own terms. Everything that concerns only the exercise - the time box, the
-submission instructions, the bonus items - stays in that file and is not repeated here.
+[ASSIGNMENT.md](ASSIGNMENT.md). Its list of behaviour to preserve is what the
+`Behaviour that must be preserved` section restates in the project's own terms. Everything that
+concerns only the exercise - the time box, the submission instructions, the bonus items - stays in that
+file and is not repeated here.
