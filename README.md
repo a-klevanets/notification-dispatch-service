@@ -4,6 +4,16 @@ Sends `EMAIL`, `SMS` and `PUSH` notifications to a recipient and records the out
 attempt, refusing what the safeguards forbid: a recipient on the blocklist, a recipient over its
 minute of rate limit, an unknown notification type, and any dispatch while the breaker is open.
 
+## Provenance
+
+This project was completed as a technical assessment for a software engineering role. It is
+published as a portfolio sample with the employer's explicit permission.
+
+The repository was seeded from the assessment's template, and the task statement is kept here as
+[ASSIGNMENT.md](ASSIGNMENT.md). That file also holds what concerns only the exercise: the time box,
+the submission instructions, the bonus items. The `Behaviour that must be preserved` table restates
+the task's `Behavior to preserve` list in this service's own terms.
+
 ## Current stack
 
 - **Framework:** Spring Boot 4.1.2, wired by `@SpringBootApplication` and `application.yml`; the
@@ -76,8 +86,7 @@ Two points of the history are worth checking out, each linked to the code as it 
 
 ## Behaviour that must be preserved
 
-Each row is a line of the task's `Behavior to preserve` list, restated in this service's terms. The
-named tests are where each line holds:
+Each row names the tests where its line of the task's `Behavior to preserve` list holds:
 
 | Behaviour | What the service does | Covered by |
 |---|---|---|
@@ -145,10 +154,3 @@ Each of these was a choice, not an omission, and each line says what it bought a
   once its three most recent calls have all failed, and the next attempt is refused before it sends,
   as a `REJECTED` row. The assigned behaviour answers repeated failures with rejection, and a retry
   answers them with a send. A caller who wants that send can already ask for it twice.
-
-## Provenance
-
-The repository was seeded from the task template, and the task statement is kept here as
-[ASSIGNMENT.md](ASSIGNMENT.md); its list of behaviour to preserve is what the
-`Behaviour that must be preserved` section restates in the project's own terms, and everything that
-concerns only the exercise - the time box, the submission instructions, the bonus items - stays there.
